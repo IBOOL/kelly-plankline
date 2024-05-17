@@ -22,7 +22,6 @@ import csv
 from PIL import Image
 import os
 import pandas as pd
-import tarfile as tarfile
 
 if __name__ == "__main__":
     directory = '../../analysis/camera0/segmentation/test1-REG'
@@ -104,5 +103,3 @@ if __name__ == "__main__":
             df = pd.DataFrame(predictions, index=image_files)
             df.to_csv(classification_dir + '/' + r2 + '_' + 'prediction.csv', index=True, header=True, sep=',')
             shutil.rmtree(segmentation_dir + '/' + r2 + "/", ignore_errors=True)
-
-

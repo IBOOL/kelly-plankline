@@ -7,12 +7,8 @@ import cv2  # still used to save images out
 import os
 import numpy as np
 import csv
-#from queue import Queue
-#from threading import Thread
 from multiprocessing import Process, Queue
 import tqdm
-import tarfile
-#import sqlite3
 import shutil
 
 class Frame:
@@ -51,6 +47,7 @@ def intersection(boxA, boxB):
 
     return interArea
 
+
 def process_frame(q, config): ## TODO: write metadata file
     """
     This function processes each frame (provided as cv2 image frame) for flatfielding and segmentation. The steps include
@@ -81,10 +78,11 @@ def process_frame(q, config): ## TODO: write metadata file
         name = frame.get_name()
         n = frame.get_n()
         stats = []
-        with open(f'{name[:-1]} statistics.csv', 'a', newline='\n') as outcsv:
+
+        with open(f'{name}[:-1]statistics.csv', 'a', newline='\n') as outcsv:
             outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
-            for i in range(len(cnts)):
-                x,y,w,h = cv2.boundingRect(cnts[i])
+            for c in cnts:
+                x,y,w,h = cv2.boundingRect(c)
                 if w*h > int(config['segmentation']['min_area']):
                     size = max(w, h)
                     im = Image.fromarray(gray[y:(y+h), x:(x+w)])
@@ -199,8 +197,9 @@ if __name__ == "__main__":
 
     print('Joining')
     worker.join(timeout=10)
-
-
-
+    
+    # Finish up by tarring all images:
+    with tarfile.open(segmentation_dir + os.path.sep + filename + ".tar", "w:") as tar:
+        tar.add(output_path)
 
 
