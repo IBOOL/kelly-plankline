@@ -79,10 +79,14 @@ def process_frame(q, config): ## TODO: write metadata file
         n = frame.get_n()
         stats = []
 
-        with open(f'{name}[:-1]statistics.csv', 'a', newline='\n') as outcsv:
+        with open(f'{name[:-1]} statistics.csv', 'a', newline='\n') as outcsv:
             outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
-            for c in cnts:
-                x,y,w,h = cv2.boundingRect(c)
+            for i in range(len(cnts)):
+                x,y,w,h = cv2.boundingRect(cnts[i])
+                if 2*w + 2*h > int(config['segmentation']['min_perimeter']) / 2: # Save information if perimenter is greater than half the minimum
+                    stats = [n, i, x + w/2, y + h/2, w, h]
+                    outwritter.writerow(stats)
+                
                 if 2*w + 2*h > int(config['segmentation']['min_perimeter']):
                     size = max(w, h)
                     im = Image.fromarray(gray[y:(y+h), x:(x+w)])
@@ -95,10 +99,8 @@ def process_frame(q, config): ## TODO: write metadata file
                         left = (size - w)//2
                         top = 0
                     im_padded.paste(im, (left, top))
-                    im_padded.save(f"{name}{n:05}-{i:05}.png")
-                stats = [name, n, i, x + w/2, y + h/2, w, h, w*h]
-                outwritter.writerow(stats)
-                    
+                    im_padded.save(f"{name}{n:06}-{i:06}.png")
+                
 
 def process_avi(avi_path, segmentation_dir, config, q):
     """
@@ -119,7 +121,7 @@ def process_avi(avi_path, segmentation_dir, config, q):
     
     with open(f'{output_path[:-1]} statistics.csv', 'a', newline='\n') as outcsv:
         outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
-        outwritter.writerow(['file', 'frame', 'crop', 'x', 'y', 'w', 'h', 'area'])
+        outwritter.writerow(['frame', 'crop', 'x', 'y', 'w', 'h'])
 
     n = 1
     while True:
@@ -142,7 +144,7 @@ if __name__ == "__main__":
         },
         'segmentation' : {
             'basename' : 'REG',
-            'min_periemter' : 4*20,
+            'min_perimeter' : 4*30,
             'flatfield_q' : 0.05
         }
     }
