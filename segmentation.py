@@ -83,7 +83,7 @@ def process_frame(q, config): ## TODO: write metadata file
             outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
             for c in cnts:
                 x,y,w,h = cv2.boundingRect(c)
-                if w*h > int(config['segmentation']['min_area']):
+                if 2*w + 2*h > int(config['segmentation']['min_perimeter']):
                     size = max(w, h)
                     im = Image.fromarray(gray[y:(y+h), x:(x+w)])
                     im_padded = Image.new(im.mode, (size, size), (255))
@@ -100,9 +100,6 @@ def process_frame(q, config): ## TODO: write metadata file
                 outwritter.writerow(stats)
                     
 
-
-
-# %%
 def process_avi(avi_path, segmentation_dir, config, q):
     """
     This function will take an avi filepath as input and perform the following steps:
@@ -115,13 +112,8 @@ def process_avi(avi_path, segmentation_dir, config, q):
     output_path = segmentation_dir + os.path.sep + filename + os.path.sep
     os.makedirs(output_path, exist_ok=True)
     
-    #con = sqlite3.connect(output_path + '/' + 'images.db')
-    #con.execute("CREATE TABLE frame(ID INT PRIMARY KEY NOT NULL,frame INT, crop INT, image BLOB)")
-    #con.commit()
-    #con.close()
 
     video = cv2.VideoCapture(avi_path)
-    #length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if not video.isOpened():
         return
     
@@ -150,7 +142,7 @@ if __name__ == "__main__":
         },
         'segmentation' : {
             'basename' : 'REG',
-            'min_area' : 600,
+            'min_periemter' : 4*20,
             'flatfield_q' : 0.05
         }
     }
@@ -176,7 +168,6 @@ if __name__ == "__main__":
 
     ## Prepare workers for receiving frames
     num_threads = os.cpu_count() - 1
-    #num_threads = 2
     max_queue = num_threads * 4
     q = Queue(maxsize=int(max_queue))
 
@@ -197,9 +188,5 @@ if __name__ == "__main__":
 
     print('Joining')
     worker.join(timeout=10)
-    
-    # Finish up by tarring all images:
-    with tarfile.open(segmentation_dir + os.path.sep + filename + ".tar", "w:") as tar:
-        tar.add(output_path)
 
 
