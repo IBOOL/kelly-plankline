@@ -133,6 +133,40 @@ def process_avi(avi_path, segmentation_dir, config, q):
             break
 
 
+def process_image(img_path, segmentation_dir, config, q):
+    """
+    This function will take an image folder as input and perform the following steps:
+    1. Create output file structures/directories
+    2. Load each frame, pass it through flatfielding and sequentially save segmented targets
+    """
+
+    # segmentation_dir: /media/plankline/Data/analysis/segmentation/Camera1/segmentation/Transect1-REG
+    _, filename = os.path.split(img_path)
+    output_path = segmentation_dir + os.path.sep + filename + os.path.sep
+    os.makedirs(output_path, exist_ok=True)
+    
+
+    for f in os.listdir(img_path):
+      if f.endswith(".jpg"):
+          video = cv2.VideoCapture(f)
+          if not video.isOpened():
+              return
+        
+          with open(f'{output_path[:-1]} statistics.csv', 'a', newline='\n') as outcsv:
+              outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
+              outwritter.writerow(['frame', 'crop', 'x', 'y', 'w', 'h'])
+    
+          n = 1
+          while True:
+              ret, frame = video.read()
+              if ret:
+                  q.put(Frame(avi_path, output_path, frame, n), block = True)
+                  n += 1
+              else:
+                  break
+
+
+
 if __name__ == "__main__":
     
     directory = '../../raw/camera0/test1'
