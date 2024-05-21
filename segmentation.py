@@ -17,17 +17,26 @@ class Frame:
         self.name = name
         self.frame = frame
         self.n = n
+        self.flatfield = False
 
-    # method for returning latest read frame
     def read(self):
         return self.frame
 
-    # method called to stop reading frames
     def get_n(self):
         return self.n
 
     def get_name(self):
         return self.name
+
+    def update(self, newframe):
+        self.frame = newframe
+
+    def set_flatfield(self, state):
+        self.flatfield = state
+
+    def get_flatfield(self):
+        return self.flatfield
+
 
 
 def bbox_area(bbox):
@@ -63,9 +72,10 @@ def process_frame(q, config): ## TODO: write metadata file
         ## Read img and flatfield
         gray = cv2.cvtColor(frame.read(), cv2.COLOR_BGR2GRAY)
         gray = np.array(gray)
-        field = np.quantile(gray, q=float(config['segmentation']['flatfield_q']), axis=0)
-        gray = (gray / field.T * 255.0)
-        gray = gray.clip(0,255).astype(np.uint8)
+        if not frame.get_flatfield():
+            field = np.quantile(gray, q=float(config['segmentation']['flatfield_q']), axis=0)
+            gray = (gray / field.T * 255.0)
+            gray = gray.clip(0,255).astype(np.uint8)
 
         # Apply Otsu's threshold
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
@@ -75,6 +85,10 @@ def process_frame(q, config): ## TODO: write metadata file
         name = frame.get_name()
         n = frame.get_n()
         stats = []
+
+        if config['segmentation']['diagnostic']:
+            cv2.imwrite(f'{name}{n:06}-qualtilefield.jpg', gray)
+            cv2.imwrite(f'{name}{n:06}-threshold.jpg', thresh)
 
         with open(f'{name[:-1]} statistics.csv', 'a', newline='\n') as outcsv:
             outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
@@ -155,17 +169,23 @@ def process_image_dir(img_path, segmentation_dir, config, q):
           image = np.array(cv2.imread(img_path + os.path.sep + f))
           image = image / bkg * 255
           image = image.clip(0,255).astype(np.uint8)
-          #cv2.imwrite(output_path + os.path.sep + f'flat-{n}-{i}.png', image)
+          
+          if config['segmentation']['diagnostic']:
+              cv2.imwrite(output_path + os.path.sep + f'{f}-flatfield.jpg', image)
           
           ## Apply Mask (also invert so black masking becomes white background in shadowgraph)
           image = ~image
           mask = np.zeros(image.shape[:2], dtype="uint8")
-          cv2.circle(mask, (image.shape[1]//2, image.shape[0]//2), 1000, 255, -1)
+          cv2.circle(mask, (image.shape[1]//2, image.shape[0]//2), 1100, 255, -1)
           image = cv2.bitwise_and(image, image, mask = mask) # Mask
-          #cv2.imwrite(output_path + os.path.sep + f'flatcrop-{n}-{i}.png', ~image)
+          
+          if config['segmentation']['diagnostic']:
+              cv2.imwrite(output_path + os.path.sep + f'{f}-flatfield+crop.jpg', ~image)
           
           image = ~image # Invert back to shadowgraph-standard
-          q.put(Frame(f, output_path, image, f), block = True)
+          newframe = Frame(f, output_path, image, f)
+          newframe.set_flatfield(True)
+          q.put(newframe, block = True)
 
 
 def generate_median_image(directory, output_dir):
@@ -193,7 +213,7 @@ def generate_median_image(directory, output_dir):
     for idx, image_file in enumerate(image_files):
         image_path = os.path.join(directory, image_file)
         image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        image = cv2.GaussianBlur(image, (5,5), 0)
+        #image = cv2.GaussianBlur(image, (5,5), 0) # TODO: Gaussian blur help at all?
         all_images[idx] = image
 
     # Compute the median image
@@ -211,6 +231,7 @@ if __name__ == "__main__":
             'dir_permissions' : 511
         },
         'segmentation' : {
+            'diagnostic' : False,
             'basename' : 'REG',
             'min_perimeter' : 4*30,
             'flatfield_q' : 0.05,
@@ -245,7 +266,7 @@ if __name__ == "__main__":
 
     ## Prepare workers for receiving frames
     num_threads = os.cpu_count() - 1
-    max_queue = num_threads * 4 # Prepare 4 frames per thread. TODO: test memory vs performance considerations.
+    max_queue = num_threads * 4 # Prepare 4 frames per thread. TODO: test memory vs performance considerations. UPDATE: 4 still seems okay on my laptop.
     q = Queue(maxsize=int(max_queue))
 
     for i in range(num_threads):
@@ -263,7 +284,8 @@ if __name__ == "__main__":
             _, filename = os.path.split(av)
             output_path = segmentation_dir + os.path.sep + filename + os.path.sep
             shutil.make_archive(segmentation_dir + os.path.sep + filename, 'zip', output_path)
-            shutil.rmtree(output_path, ignore_errors=True)
+            if not config['segmentation']['diagnostic']:
+                shutil.rmtree(output_path, ignore_errors=True)
 
     if len(imgsets) > 0:
         print(f'Starting processing on {len(imgsets)} subfolders.')
@@ -271,6 +293,12 @@ if __name__ == "__main__":
             if not os.path.exists(config['segmentation']['calibration_image']):
                 generate_median_image(im, config['segmentation']['calibration_image'])
             process_image_dir(im, segmentation_dir, config, q)
+            
+            _, filename = os.path.split(im)
+            output_path = segmentation_dir + os.path.sep + filename + os.path.sep
+            shutil.make_archive(segmentation_dir + os.path.sep + filename, 'zip', output_path)
+            if not config['segmentation']['diagnostic']:
+                shutil.rmtree(output_path, ignore_errors=True)
             
     print('Joining')
     worker.join(timeout=10)

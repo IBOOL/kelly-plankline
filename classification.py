@@ -22,22 +22,14 @@ import csv
 from PIL import Image
 import os
 import pandas as pd
+import json
 
 if __name__ == "__main__":
-    directory = '../../analysis/camera0/segmentation/test1-REG'
+    directory = '../../analysis/camera0/segmentation/shadowgraph-REG'
 
     config = {
         'general' : {
             'dir_permissions' : 511
-        },
-        'segmentation' : {
-            'basename' : 'REG',
-            'segment_processes' : 1,
-            'overlap' : 0.1,
-            'max_area' : 400000,
-            'min_area' : 200,
-            'delta' : 4,
-            'flatfield_q' : 0.02
         },
         'classification' : {
             'model_name' : 'theta',
@@ -46,17 +38,6 @@ if __name__ == "__main__":
             'fast_scratch' : '/tmp',
             'batchsize' : 128,
             'image_size' : 128
-        },
-        'training' : {
-            'scnn_dir' : '../../training/20231002',
-            'model_name': 'theta',
-            'model_path': '../../model/',
-            'image_size': '128',
-            'start' : 10,
-            'stop' : 100,
-            'validationSetRatio' : 0.2,
-            'batchsize' : 16,
-            'seed': 123
         }
     }
 
@@ -66,8 +47,14 @@ if __name__ == "__main__":
 
     # Load model
     model_path = f"../../model/{config['classification']['model_name']}.keras"
+    label_path = f"../../model/{config['classification']['model_name']}.json"
     model = tf.keras.models.load_model(model_path)
+    
+    with open(label_path, 'r') as file:
+        labels = json.load(file)
 
+    print(f"Loaded keras model {config['classification']['model_name']} and sidecar JSON file.")
+    
     # ### Setup Folders and run classification on each segment output
     segmentation_dir = os.path.abspath(directory)  # /media/plankline/Data/analysis/segmentation/Camera1/Transect1-reg
     classification_dir = segmentation_dir.replace('segmentation', 'classification')  # /media/plankline/Data/analysis/segmentation/Camera1/Transect1-reg
@@ -77,9 +64,10 @@ if __name__ == "__main__":
     os.makedirs(classification_dir, int(config['general']['dir_permissions']), exist_ok = True)
     os.makedirs(fast_scratch, int(config['general']['dir_permissions']), exist_ok = True)
 
-    root = os.listdir(segmentation_dir)
+    root = [z for z in os.listdir(segmentation_dir) if z.endswith('zip')]
+    
 
-    print(f"Found {len(root)} subfolders.")
+    print(f"Found {len(root)} archives for potential processing.")
 
     for r in tqdm.tqdm(root):
         if r.endswith('.zip'):
@@ -100,6 +88,11 @@ if __name__ == "__main__":
             
             predictions = model.predict(images, verbose = 0)
             prediction_labels = np.argmax(predictions, axis=-1)
+            prediction_labels = [labels[i] for i in prediction_labels]
             df = pd.DataFrame(predictions, index=image_files)
+            df_short = pd.DataFrame(prediction_labels, index=image_files)
+            
+            df.columns = labels
             df.to_csv(classification_dir + '/' + r2 + '_' + 'prediction.csv', index=True, header=True, sep=',')
+            df_short.to_csv(classification_dir + '/' + r2 + '_' + 'predictionlist.csv', index=True, header=True, sep=',')
             shutil.rmtree(segmentation_dir + '/' + r2 + "/", ignore_errors=True)

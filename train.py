@@ -18,6 +18,8 @@ import os
 from PIL import Image
 import pandas as pd
 import json
+import platform
+import time
 
 def classify(model_file, input_dir):
     model = tf.keras.models.load_model(model_file)
@@ -184,13 +186,22 @@ if __name__ == "__main__":
 
     v_string = "V2024.04.27"
     print(f"Starting CNN Model Training Script {v_string}")
+    timer = { 'init' : time.time() }
 
     # ## Load training and validation data sets
 
     train_ds, val_ds = init_ts(config)
+    timer['model_load_start'] = time.time()
     model = load_model(config)
+    timer['model_load_end'] = time.time()
+
+    timer['model_train_start'] = time.time()
     model = train_model(model, config, train_ds, val_ds)
+    timer['model_train_end'] = time.time()
+
+    timer['model_save_start'] = time.time()
     model.save(config['training']['model_path'] + '/' + config['training']['model_name'] + '.keras')
+    timer['model_save_end'] = time.time()
         
     predictions = model.predict(val_ds)
     predictions = np.argmax(predictions, axis = -1)
@@ -198,22 +209,28 @@ if __name__ == "__main__":
 
     confusion_matrix = tf.math.confusion_matrix(y, predictions)
     confusion_matrix = pd.DataFrame(confusion_matrix, index = train_ds.class_names, columns = train_ds.class_names)
-    #confusion_matrix.to_excel(config['training']['model_path'] + '/' + config['training']['model_name'] + ' confusion.xlsxthe s')
     confusion_matrix.to_csv(config['training']['model_path'] + '/' + config['training']['model_name'] + ' confusion.csv')
+
+    timer['close'] = time.time()
     
-    json_object = json.dumps(train_ds.class_names, indent=4)
- 
-    # Writing to sample.json
+    ## Generate sidecar dictionary:
+    sidecar = {
+        'model_name' : config['training']['model_name'],
+        'labels' : train_ds.class_names,
+        'script_version' : v_string,
+        'config' : config,
+        'system_info' : {
+            'System' : platform.system(),
+            'Node' : platform.node(),
+            'Release' : platform.release(),
+            'Version' : platform.version(),
+            'Machine' : platform.machine(),
+            'Processor' : platform.processor()
+        },
+        'timings' : timer
+    }
+    
+    json_object = json.dumps(sidecar, indent=4)
     with open(config['training']['model_path'] + '/' + config['training']['model_name'] + ' classes.json', "w") as outfile:
         outfile.write(json_object)
-        
-    #summary = {
-    #    "file": val_ds.file_paths,
-    #    "label": val_ds.class_names,
-    #    "prediction": pd.Series(predictions),
-    #}
-        
-    #summary = pd.DataFrame(summary)
-    #summary.to_csv(config['training']['model_path'] + '/' + config['training']['model_name'] + ' summary.csv')
-
 
