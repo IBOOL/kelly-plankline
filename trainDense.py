@@ -158,7 +158,7 @@ if __name__ == "__main__":
             'model_path': '../../model/',
             'image_size': 128,
             'start' : 0,
-            'stop' : 100,
+            'stop' : 300,
             'validationSetRatio' : 0.2,
             'batchsize' : 128,
             'seed': 123
