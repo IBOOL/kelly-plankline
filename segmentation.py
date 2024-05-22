@@ -134,12 +134,13 @@ def process_avi(avi_path, segmentation_dir, config, q):
         outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
         outwritter.writerow(['frame', 'crop', 'x', 'y', 'w', 'h'])
 
-    n = 1
+    n = 1 # Frame count
     while True:
         ret, frame = video.read()
         if ret:
-            q.put(Frame(avi_path, output_path, frame, n), block = True)
-            n += 1
+            if not frame is None:
+                q.put(Frame(avi_path, output_path, frame, n), block = True)
+                n += 1 # Increment frame counter.
         else:
             break
 
@@ -183,9 +184,10 @@ def process_image_dir(img_path, segmentation_dir, config, q):
               cv2.imwrite(output_path + os.path.sep + f'{f}-flatfield+crop.jpg', ~image)
           
           image = ~image # Invert back to shadowgraph-standard
-          newframe = Frame(f, output_path, image, f)
-          newframe.set_flatfield(True)
-          q.put(newframe, block = True)
+          if not image is None:
+              newframe = Frame(f, output_path, image, f)
+              newframe.set_flatfield(True)
+              q.put(newframe, block = True)
 
 
 def generate_median_image(directory, output_dir):
@@ -239,7 +241,7 @@ if __name__ == "__main__":
         }
     }
 
-    v_string = "V2024.05.18"
+    v_string = "V2024.05.21"
     print(f"Starting Segmentation Script {v_string}")
 
     ## Determine directories

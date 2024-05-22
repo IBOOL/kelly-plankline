@@ -41,7 +41,7 @@ if __name__ == "__main__":
         }
     }
 
-    v_string = "V2024.04.26"
+    v_string = "V2024.05.20"
     session_id = str(datetime.datetime.now().strftime("%Y%m%d_%H%M%S")).replace(':', '')
     print(f"Starting Plankline Classification Script {v_string}")
 
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     model = tf.keras.models.load_model(model_path)
     
     with open(label_path, 'r') as file:
-        labels = json.load(file)
+        sidecar = json.load(file)
 
     print(f"Loaded keras model {config['classification']['model_name']} and sidecar JSON file.")
     
@@ -70,29 +70,28 @@ if __name__ == "__main__":
     print(f"Found {len(root)} archives for potential processing.")
 
     for r in tqdm.tqdm(root):
-        if r.endswith('.zip'):
-            r2 = r.replace(".zip", "")
-            shutil.unpack_archive(segmentation_dir + '/' + r, segmentation_dir + '/' + r2 + "/", 'zip')
+        r2 = r.replace(".zip", "")
+        shutil.unpack_archive(segmentation_dir + '/' + r, segmentation_dir + '/' + r2 + "/", 'zip')
 
-            images = []
-            image_files = []
-            for img in os.listdir(segmentation_dir + '/' + r2):
-                if os.path.splitext(img)[1] == '.png':
-                    image_files.append(img)
-                    img = tf.keras.preprocessing.image.load_img(segmentation_dir + '/' + r2 + '/' + img,
-                                                                target_size=(int(config['classification']['image_size']),int(config['classification']['image_size'])),
-                                                                color_mode='grayscale')
-                    img = np.expand_dims(img, axis=0)
-                    images.append(img)
-            images = np.vstack(images)
+        images = []
+        image_files = []
+        for img in os.listdir(segmentation_dir + '/' + r2):
+            if img.endswith(('png', 'jpeg', 'jpg', 'tif', 'tiff')): 
+                image_files.append(img)
+                img = tf.keras.preprocessing.image.load_img(segmentation_dir + '/' + r2 + '/' + img,
+                                                            target_size=(int(config['classification']['image_size']), int(config['classification']['image_size'])),
+                                                            color_mode='grayscale')
+                img = np.expand_dims(img, axis=0)
+                images.append(img)
+        images = np.vstack(images)
             
-            predictions = model.predict(images, verbose = 0)
-            prediction_labels = np.argmax(predictions, axis=-1)
-            prediction_labels = [labels[i] for i in prediction_labels]
-            df = pd.DataFrame(predictions, index=image_files)
-            df_short = pd.DataFrame(prediction_labels, index=image_files)
+        predictions = model.predict(images, verbose = 0)
+        prediction_labels = np.argmax(predictions, axis=-1)
+        prediction_labels = [labels[i] for i in prediction_labels]
+        df = pd.DataFrame(predictions, index=image_files)
+        df_short = pd.DataFrame(prediction_labels, index=image_files)
             
-            df.columns = labels
-            df.to_csv(classification_dir + '/' + r2 + '_' + 'prediction.csv', index=True, header=True, sep=',')
-            df_short.to_csv(classification_dir + '/' + r2 + '_' + 'predictionlist.csv', index=True, header=True, sep=',')
-            shutil.rmtree(segmentation_dir + '/' + r2 + "/", ignore_errors=True)
+        df.columns = sidecar['labels']
+        df.to_csv(classification_dir + '/' + r2 + '_' + 'prediction.csv', index=True, header=True, sep=',')
+        df_short.to_csv(classification_dir + '/' + r2 + '_' + 'predictionlist.csv', index=True, header=True, sep=',')
+        shutil.rmtree(segmentation_dir + '/' + r2 + "/", ignore_errors=True)
