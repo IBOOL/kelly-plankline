@@ -84,7 +84,7 @@ def DenseNet(input_shape, num_classes):
     x = tf.keras.layers.RandomZoom(0.2, fill_value=0.0, fill_mode='constant')(x)
     x = tf.keras.layers.RandomTranslation(0.1, 0.1, fill_mode='constant', fill_value=0.0)(x)
     x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-    x = tf.keras.layers.RandomBrightness(0.3)(x)
+    x = tf.keras.layers.RandomBrightness(0.3, value_range=(0.0, 1.0))(x)
     
     # Initial convolution layer
     x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
