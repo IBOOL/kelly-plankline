@@ -22,7 +22,7 @@ import platform
 import time
 
 
-class TrainingLogger(Callback):
+class TrainingLogger(tf.keras.callbacks.Callback):
     def __init__(self, filename):
         super(CustomMetricsLogger, self).__init__()
         self.filename = filename
