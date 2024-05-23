@@ -24,7 +24,7 @@ import time
 
 class TrainingLogger(tf.keras.callbacks.Callback):
     def __init__(self, filename):
-        super(CustomMetricsLogger, self).__init__()
+        super(TrainingLogger, self).__init__()
         self.filename = filename
         self.file = open(self.filename, 'w')
         self.csv_writer = None
