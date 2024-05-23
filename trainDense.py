@@ -23,25 +23,6 @@ import time
 import csv
 
 
-class TrainingLogger(tf.keras.callbacks.Callback):
-    def __init__(self, filename):
-        super(TrainingLogger, self).__init__()
-        self.filename = filename
-        self.file = open(self.filename, 'w')
-        self.csv_writer = csv.writer(self.file)
-
-    def on_train_begin(self, logs=None):
-        self.csv_writer = csv.writer(self.file)
-        self.csv_writer.writerow(['epoch', 'loss', 'accuracy', 'val_loss', 'val_accuracy'])
-
-    def on_epoch_end(self, epoch, logs=None):
-        #print(f"Epoch {epoch+1}: loss={logs['loss']}, accuracy={logs['accuracy']}, val_loss={logs['val_loss']}, val_accuracy={logs['val_accuracy']}")
-        self.csv_writer.writerow([epoch+1, logs['loss'], logs['accuracy'], logs['val_loss'], logs['val_accuracy']])
-
-    def on_train_end(self, logs=None):
-        self.file.close()
-
-
 def classify(model_file, input_dir):
     model = tf.keras.models.load_model(model_file)
 
@@ -258,14 +239,15 @@ def init_model(num_classes, img_height, img_width):
 
 
 def train_model(model, config, train_ds, val_ds):
-    custom_logger = TrainingLogger(config['training']['model_path'] + '/' + config['training']['model_name'] + '.log')
+
+    csv_logger = tf.keras.calllbacks.CSVLogger(config['training']['model_path'] + '/' + config['training']['model_name'] + '.log', append=False, separator=',')
 
     history = model.fit(train_ds,
                         validation_data=val_ds,
                         epochs=int(config['training']['stop'])-int(config['training']['start']),
                         initial_epoch=int(config['training']['start']),
                         batch_size = int(config['training']['batchsize']),
-                        callbacks=[custom_logger])
+                        callbacks=[csv_logger])
     
     return(model, history)
 
