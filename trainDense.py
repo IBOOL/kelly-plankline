@@ -28,14 +28,14 @@ class TrainingLogger(tf.keras.callbacks.Callback):
         super(TrainingLogger, self).__init__()
         self.filename = filename
         self.file = open(self.filename, 'w')
-        self.csv_writer = None
+        self.csv_writer = csv.writer(self.file)
 
     def on_train_begin(self, logs=None):
         self.csv_writer = csv.writer(self.file)
         self.csv_writer.writerow(['epoch', 'loss', 'accuracy', 'val_loss', 'val_accuracy'])
 
     def on_epoch_end(self, epoch, logs=None):
-        print(f"Epoch {epoch+1}: loss={logs['loss']}, accuracy={logs['accuracy']}, val_loss={logs['val_loss']}, val_accuracy={logs['val_accuracy']}")
+        #print(f"Epoch {epoch+1}: loss={logs['loss']}, accuracy={logs['accuracy']}, val_loss={logs['val_loss']}, val_accuracy={logs['val_accuracy']}")
         self.csv_writer.writerow([epoch+1, logs['loss'], logs['accuracy'], logs['val_loss'], logs['val_accuracy']])
 
     def on_train_end(self, logs=None):
