@@ -11,7 +11,7 @@
         "calibration_image" : "../../raw/camera0/shadowgraph/median_image.jpg"
     },
     "classification" : {
-        "model_name" : "theta",
+        "model_name" : "iota",
         "model_dir" : "../../model",
         "scnn_instances" : 1,
         "fast_scratch" : "/tmp",
@@ -20,7 +20,7 @@
     },
     "training" : {
         "scnn_dir" : "../../training/training_set_20240123",
-        "model_name": "theta",
+        "model_name": "iota",
         "model_type": "DenseNet121",
         "model_path": "../../model/",
         "image_size": 128,
