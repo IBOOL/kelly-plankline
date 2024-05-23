@@ -257,13 +257,14 @@ def init_model(num_classes, img_height, img_width):
 
 
 def train_model(model, config, train_ds, val_ds):
-    custom_logger = CustomMetricsLogger(config['training']['model_path'] + '/' + config['training']['model_name'] + '.log')
+    custom_logger = TrainingLogger(config['training']['model_path'] + '/' + config['training']['model_name'] + '.log')
 
     history = model.fit(train_ds,
                         validation_data=val_ds,
                         epochs=int(config['training']['stop'])-int(config['training']['start']),
                         initial_epoch=int(config['training']['start']),
-                        batch_size = int(config['training']['batchsize']))
+                        batch_size = int(config['training']['batchsize']),
+                        callbacks=[custom_logger])
     
     return(model, history)
 
