@@ -240,7 +240,7 @@ def init_model(num_classes, img_height, img_width):
 
 def train_model(model, config, train_ds, val_ds):
 
-    csv_logger = tf.keras.calllbacks.CSVLogger(config['training']['model_path'] + '/' + config['training']['model_name'] + '.log', append=False, separator=',')
+    csv_logger = tf.keras.callbacks.CSVLogger(config['training']['model_path'] + '/' + config['training']['model_name'] + '.log', append=False, separator=',')
 
     history = model.fit(train_ds,
                         validation_data=val_ds,
