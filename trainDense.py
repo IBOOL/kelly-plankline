@@ -228,10 +228,10 @@ def DenseNet264(input_shape, num_classes):
 def init_model(num_classes, img_height, img_width):
 
     ## Generate new model:
-    model = DenseNet121([img_height, img_width, 1], num_classes)
+    #model = DenseNet121([img_height, img_width, 1], num_classes)
     #model = DenseNet169([img_height, img_width, 1], num_classes)
-    #model = DenseNet102([img_height, img_width, 1], num_classes)
-    #model = DenseNet264([img_height, img_width, 1], num_classes)
+    #model = DenseNet201([img_height, img_width, 1], num_classes)
+    model = DenseNet264([img_height, img_width, 1], num_classes)
     
     model.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), metrics=['accuracy'])
     model.summary()
@@ -269,7 +269,7 @@ if __name__ == "__main__":
     with open('config.json', 'r') as f:
         config = json.load(f)
 
-    v_string = "V2024.05.03"
+    v_string = "V2024.05.22"
     session_id = str(datetime.datetime.now().strftime("%Y%m%d_%H%M%S")).replace(':', '')
     
     print(f"Starting CNN Model Training Script {v_string}")
