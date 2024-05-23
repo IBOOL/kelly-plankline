@@ -56,7 +56,7 @@ def init_model(num_classes, img_height, img_width):
     model.summary()
     return(model)
 
-# %%
+
 def ResNet18(input_shape, name, num_classes):
     BN_AXIS = 3
 
@@ -166,23 +166,9 @@ def init_ts(config):
     return(train_ds, val_ds)
 
 if __name__ == "__main__":
-    config = {
-        'general' : {
-            'dir_permissions' : 511,
-            'dry_run' : 'False'
-        },
-        'training' : {
-            'scnn_dir' : '../../training/training_set_20240123',
-            'model_name': 'theta',
-            'model_path': '../../model/',
-            'image_size': 128,
-            'start' : 0,
-            'stop' : 100,
-            'validationSetRatio' : 0.25,
-            'batchsize' : 256,
-            'seed': 123
-        }
-    }
+
+    with open('config.json', 'r') as f:
+        config = json.load(f)
 
     v_string = "V2024.04.27"
     print(f"Starting CNN Model Training Script {v_string}")
@@ -231,6 +217,6 @@ if __name__ == "__main__":
     }
     
     json_object = json.dumps(sidecar, indent=4)
-    with open(config['training']['model_path'] + '/' + config['training']['model_name'] + ' classes.json', "w") as outfile:
+    with open(config['training']['model_path'] + '/' + config['training']['model_name'] + '.json', "w") as outfile:
         outfile.write(json_object)
 

@@ -208,18 +208,8 @@ if __name__ == "__main__":
     
     directory = '../../raw/camera0/shadowgraph'
 
-    config = {
-        'general' : {
-            'dir_permissions' : 511
-        },
-        'segmentation' : {
-            'diagnostic' : False,
-            'basename' : 'REG',
-            'min_perimeter' : 4*40,
-            'flatfield_q' : 0.05,
-            'calibration_image' : '../../raw/camera0/shadowgraph/median_image.jpg'
-        }
-    }
+    with open('config.json', 'r') as f:
+        config = json.load(f)
 
     v_string = "V2024.05.21"
 

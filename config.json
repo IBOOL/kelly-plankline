@@ -1,0 +1,33 @@
+{
+    "general" : {
+        "dir_permissions" : 511,
+        "config_name" : "v1.0"
+    },
+    "segmentation" : {
+        "diagnostic" : false,
+        "basename" : "REG",
+        "min_perimeter" : 160,
+        "flatfield_q" : 0.05,
+        "calibration_image" : "../../raw/camera0/shadowgraph/median_image.jpg"
+    },
+    "classification" : {
+        "model_name" : "theta",
+        "model_dir" : "../../model",
+        "scnn_instances" : 1,
+        "fast_scratch" : "/tmp",
+        "batchsize" : 128,
+        "image_size" : 128
+    },
+    "training" : {
+        "scnn_dir" : "../../training/training_set_20240123",
+        "model_name": "theta",
+        "model_type": "DenseNet121",
+        "model_path": "../../model/",
+        "image_size": 128,
+        "start" : 0,
+        "stop" : 300,
+        "validationSetRatio" : 0.2,
+        "batchsize" : 128,
+        "seed": 123
+    }
+}

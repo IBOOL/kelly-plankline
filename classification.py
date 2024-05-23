@@ -86,19 +86,8 @@ def setup_logger():
 if __name__ == "__main__":
     directory = '../../analysis/camera0/segmentation/shadowgraph-REG'
 
-    config = {
-        'general' : {
-            'dir_permissions' : 511
-        },
-        'classification' : {
-            'model_name' : 'theta',
-            'model_dir' : '../../model',
-            'scnn_instances' : 1,
-            'fast_scratch' : '/tmp',
-            'batchsize' : 128,
-            'image_size' : 128
-        }
-    }
+    with open('config.json', 'r') as f:
+        config = json.load(f)
 
     v_string = "V2024.05.22"
     session_id = str(datetime.datetime.now().strftime("%Y%m%d_%H%M%S")).replace(':', '')
@@ -132,7 +121,7 @@ if __name__ == "__main__":
     #logger.debug(f"Fast temporary directory is {fast_scratch}.")
 
     os.makedirs(classification_dir, int(config['general']['dir_permissions']), exist_ok = True)
-    os.makedirs(fast_scratch, int(config['general']['dir_permissions']), exist_ok = True)
+    #os.makedirs(fast_scratch, int(config['general']['dir_permissions']), exist_ok = True)
 
     root = [z for z in os.listdir(segmentation_dir) if z.endswith('zip')]
     
@@ -165,12 +154,13 @@ if __name__ == "__main__":
         logger.info("Finished loading images. Starting prediction.")
         predictions = model.predict(images, verbose = 0)
         prediction_labels = np.argmax(predictions, axis=-1)
-        prediction_labels = [labels[i] for i in prediction_labels]
+        prediction_labels = [sidecar['labels'][i] for i in prediction_labels]
         df = pd.DataFrame(predictions, index=image_files)
         df_short = pd.DataFrame(prediction_labels, index=image_files)
             
         df.columns = sidecar['labels']
         df.to_csv(classification_dir + '/' + r2 + '_' + 'prediction.csv', index=True, header=True, sep=',')
+        df_short.columns = ['prediction']
         df_short.to_csv(classification_dir + '/' + r2 + '_' + 'predictionlist.csv', index=True, header=True, sep=',')
         
         logger.info('Cleaning up unpacked archive files.')
