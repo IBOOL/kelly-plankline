@@ -229,8 +229,8 @@ def init_model(num_classes, img_height, img_width):
 
     ## Generate new model:
     #model = DenseNet121([img_height, img_width, 1], num_classes)
-    #model = DenseNet169([img_height, img_width, 1], num_classes)
-    model = DenseNet201([img_height, img_width, 1], num_classes)
+    model = DenseNet169([img_height, img_width, 1], num_classes)
+    #model = DenseNet201([img_height, img_width, 1], num_classes)
     #model = DenseNet264([img_height, img_width, 1], num_classes)
     
     model.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), metrics=['accuracy'])

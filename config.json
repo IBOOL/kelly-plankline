@@ -20,8 +20,8 @@
     },
     "training" : {
         "scnn_dir" : "../../training/training_set_20240123",
-        "model_name": "iota201",
-        "model_type": "DenseNet201",
+        "model_name": "iota169",
+        "model_type": "DenseNet169",
         "model_path": "../../model/",
         "image_size": 128,
         "start" : 0,
