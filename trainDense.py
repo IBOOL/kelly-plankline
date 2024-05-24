@@ -314,8 +314,8 @@ if __name__ == "__main__":
             'Machine' : platform.machine(),
             'Processor' : platform.processor()
         },
-        'timings' : timer,
-        'history' : pd.DataFrame(history.history)
+        'timings' : timer
+        #'history' : pd.DataFrame(history.history)
     }
     
     json_object = json.dumps(sidecar, indent=4)
