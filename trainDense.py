@@ -50,7 +50,7 @@ def classify(model_file, input_dir):
 
 def load_model(config):
     if int(config['training']['start']) > 0:
-        return(tf.keras.models.load_model(config['training']['scnn_dir'], config))
+        return(tf.keras.models.load_model(config['training']['model_path'] + '/' + config['training']['model_name'] + '.keras'))
     
     return(init_model(61, int(config['training']['image_size']), int(config['training']['image_size'])))
 
