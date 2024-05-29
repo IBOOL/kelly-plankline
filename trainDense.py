@@ -48,13 +48,6 @@ def classify(model_file, input_dir):
         csvwritter.writerow(image_files)
 
 
-def load_model(config):
-    if int(config['training']['start']) > 0:
-        return(tf.keras.models.load_model(config['training']['model_path'] + '/' + config['training']['model_name'] + '.keras'))
-    
-    return(init_model(61, int(config['training']['image_size']), int(config['training']['image_size'])))
-
-
 def conv_block(x, growth_rate):
     x1 = tf.keras.layers.BatchNormalization()(x)
     x1 = tf.keras.layers.Activation('relu')(x1)
@@ -77,25 +70,124 @@ def transition_block(x, compression):
     x = tf.keras.layers.MaxPooling2D((2, 2))(x)
     return x
 
+def augmentation_block(x):
+    x = tf.keras.layers.Rescaling(-1. / 255, 1)(x) # Invert shadowgraph image (white vs black)
+    x = tf.keras.layers.RandomRotation(1, fill_mode='constant', fill_value=0.0)(x)
+    x = tf.keras.layers.RandomZoom(0.05, fill_value=0.0, fill_mode='constant')(x)
+    x = tf.keras.layers.RandomTranslation(0.1, 0.1, fill_mode='constant', fill_value=0.0)(x)
+    x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
+    x = tf.keras.layers.RandomBrightness(0.1, value_range=(0.0, 1.0))(x)
+    x = tf.keras.layers.RandomContrast(0.1)(x)
+    return x
 
-def DenseNet121(input_shape, num_classes):
+def DenseNet45(input_shape, num_classes):
 
     ## Init and Augmentation
     inputs = tf.keras.layers.Input(shape=input_shape)
-    x = tf.keras.layers.Rescaling(-1. / 255, 1)(inputs) # Invert shadowgraph image (white vs black)
-    x = tf.keras.layers.RandomRotation(1, fill_mode='constant', fill_value=0.0)(x)
-    x = tf.keras.layers.RandomZoom(0.2, fill_value=0.0, fill_mode='constant')(x)
-    x = tf.keras.layers.RandomTranslation(0.2, 0.2, fill_mode='constant', fill_value=0.0)(x)
-    x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-    x = tf.keras.layers.RandomBrightness(0.2, value_range=(0.0, 1.0))(x)
-    
+    x = augmentation_block(inputs)
+
     # Initial convolution layer
     x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Activation('relu')(x)
     x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
     
-    ## DenseNet121
+    ## DenseNet45 (40 internal)
+    x = dense_block(x, num_layers=6, growth_rate=32)
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=6, growth_rate=32) 
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=4, growth_rate=32)
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=4, growth_rate=32)
+
+    # Final layers
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Dense(512, activation='relu')(x)
+    x = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+    
+    model = tf.keras.models.Model(inputs, x)
+    return model
+
+
+def DenseNet61(input_shape, num_classes):
+
+    ## Init and Augmentation
+    inputs = tf.keras.layers.Input(shape=input_shape)
+    x = augmentation_block(inputs)
+
+    # Initial convolution layer
+    x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
+    
+    ## DenseNet61 (56 internal)
+    x = dense_block(x, num_layers=6, growth_rate=32)
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=8, growth_rate=32) 
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=8, growth_rate=32)
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=6, growth_rate=32)
+
+    # Final layers
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Dense(512, activation='relu')(x)
+    x = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+    
+    model = tf.keras.models.Model(inputs, x)
+    return model
+
+def DenseNet89(input_shape, num_classes):
+
+    ## Init and Augmentation
+    inputs = tf.keras.layers.Input(shape=input_shape)
+    x = augmentation_block(inputs)
+
+    # Initial convolution layer
+    x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
+    
+    ## DenseNet89 (84 internal)
+    x = dense_block(x, num_layers=6, growth_rate=32)
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=12, growth_rate=32) 
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=12, growth_rate=32)
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=12, growth_rate=32)
+
+    # Final layers
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Dense(512, activation='relu')(x)
+    x = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+    
+    model = tf.keras.models.Model(inputs, x)
+    return model
+
+
+def DenseNet121(input_shape, num_classes):
+
+    ## Init and Augmentation
+    inputs = tf.keras.layers.Input(shape=input_shape)
+    x = augmentation_block(inputs)
+
+    # Initial convolution layer
+    x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
+    
+    ## DenseNet121 (116 internal)
     x = dense_block(x, num_layers=6, growth_rate=32)
     x = transition_block(x, compression=0.5)
     x = dense_block(x, num_layers=12, growth_rate=32)
@@ -119,12 +211,7 @@ def DenseNet169(input_shape, num_classes):
 
     ## Init and Augmentation
     inputs = tf.keras.layers.Input(shape=input_shape)
-    x = tf.keras.layers.Rescaling(-1. / 255, 1)(inputs) # Invert shadowgraph image (white vs black)
-    x = tf.keras.layers.RandomRotation(1, fill_mode='constant', fill_value=0.0)(x)
-    x = tf.keras.layers.RandomZoom(0.2, fill_value=0.0, fill_mode='constant')(x)
-    x = tf.keras.layers.RandomTranslation(0.2, 0.2, fill_mode='constant', fill_value=0.0)(x)
-    x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-    x = tf.keras.layers.RandomBrightness(0.2, value_range=(0.0, 1.0))(x)
+    x = augmentation_block(inputs)
     
     # Initial convolution layer
     x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
@@ -156,12 +243,7 @@ def DenseNet201(input_shape, num_classes):
 
     ## Init and Augmentation
     inputs = tf.keras.layers.Input(shape=input_shape)
-    x = tf.keras.layers.Rescaling(-1. / 255, 1)(inputs) # Invert shadowgraph image (white vs black)
-    x = tf.keras.layers.RandomRotation(1, fill_mode='constant', fill_value=0.0)(x)
-    x = tf.keras.layers.RandomZoom(0.2, fill_value=0.0, fill_mode='constant')(x)
-    x = tf.keras.layers.RandomTranslation(0.2, 0.2, fill_mode='constant', fill_value=0.0)(x)
-    x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-    x = tf.keras.layers.RandomBrightness(0.2, value_range=(0.0, 1.0))(x)
+    x = augmentation_block(inputs)
     
     # Initial convolution layer
     x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
@@ -193,12 +275,7 @@ def DenseNet264(input_shape, num_classes):
 
     ## Init and Augmentation
     inputs = tf.keras.layers.Input(shape=input_shape)
-    x = tf.keras.layers.Rescaling(-1. / 255, 1)(inputs) # Invert shadowgraph image (white vs black)
-    x = tf.keras.layers.RandomRotation(1, fill_mode='constant', fill_value=0.0)(x)
-    x = tf.keras.layers.RandomZoom(0.2, fill_value=0.0, fill_mode='constant')(x)
-    x = tf.keras.layers.RandomTranslation(0.2, 0.2, fill_mode='constant', fill_value=0.0)(x)
-    x = tf.keras.layers.RandomFlip("horizontal_and_vertical")(x)
-    x = tf.keras.layers.RandomBrightness(0.2, value_range=(0.0, 1.0))(x)
+    x = augmentation_block(inputs)
     
     # Initial convolution layer
     x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
@@ -225,15 +302,26 @@ def DenseNet264(input_shape, num_classes):
     model = tf.keras.models.Model(inputs, x)
     return model
 
+
+def load_model(config, num_classes):
+    if int(config['training']['start']) > 0:
+        return(tf.keras.models.load_model(config['training']['model_path'] + '/' + config['training']['model_name'] + '.keras'))
+    
+    return(init_model(num_classes, int(config['training']['image_size']), int(config['training']['image_size'])))
+
+
 def init_model(num_classes, img_height, img_width):
 
     ## Generate new model:
+    model = DenseNet45([img_height, img_width, 1], num_classes)
+    #model = DenseNet61([img_height, img_width, 1], num_classes)
+    #model = DenseNet89([img_height, img_width, 1], num_classes)
     #model = DenseNet121([img_height, img_width, 1], num_classes)
-    model = DenseNet169([img_height, img_width, 1], num_classes)
+    #model = DenseNet169([img_height, img_width, 1], num_classes)
     #model = DenseNet201([img_height, img_width, 1], num_classes)
     #model = DenseNet264([img_height, img_width, 1], num_classes)
     
-    model.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), metrics=['accuracy'])
+    model.compile(optimizer='Nadam', loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), metrics=['accuracy'])
     model.summary()
     return(model)
 
@@ -262,6 +350,12 @@ def init_ts(config):
         image_size = (int(config['training']['image_size']), int(config['training']['image_size'])),
         batch_size = int(config['training']['batchsize']),
         color_mode = 'grayscale')
+    
+    train_ds = train_ds.cache()
+    val_ds = val_ds.cache()
+    train_ds = train_ds.prefetch(1)
+    val_ds = val_ds.prefetch(1)
+    
     return(train_ds, val_ds)
 
 
@@ -277,8 +371,10 @@ if __name__ == "__main__":
 
     # ## Load training and validation data sets
     train_ds, val_ds = init_ts(config)
+    y = np.concatenate([y for x, y in val_ds], axis = 0)
+
     timer['model_load_start'] = time.time()
-    model = load_model(config)
+    model = load_model(config, len(y))
     timer['model_load_end'] = time.time()
     
     timer['model_train_start'] = time.time()
@@ -291,7 +387,6 @@ if __name__ == "__main__":
         
     predictions = model.predict(val_ds)
     predictions = np.argmax(predictions, axis = -1)
-    y = np.concatenate([y for x, y in val_ds], axis = 0)
 
     confusion_matrix = tf.math.confusion_matrix(y, predictions)
     confusion_matrix = pd.DataFrame(confusion_matrix, index = train_ds.class_names, columns = train_ds.class_names)

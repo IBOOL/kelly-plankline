@@ -84,7 +84,15 @@ def setup_logger():
 
 
 if __name__ == "__main__":
-    directory = '../../analysis/camera0/segmentation/shadowgraph-REG'
+    
+    if length(sys.argv) < 2:
+        return('The segmentation sub-directory must be specificed. Stopping.')
+        
+    arguments = sys.argv[1:]
+    if not os.path.exists(sys.arguments[1]):
+        return('Specified path does not exist. Stopping.')
+
+    directory = arguments[1] # directory should be the first argument
 
     with open('config.json', 'r') as f:
         config = json.load(f)

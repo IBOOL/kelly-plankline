@@ -225,8 +225,15 @@ def generate_median_image(directory, output_dir):
     
 
 if __name__ == "__main__":
-    
-    directory = '../../raw/camera0/shadowgraph'
+
+    if length(sys.argv) < 2:
+        return('The raw sub-directory must be specificed. Stopping.')
+        
+    arguments = sys.argv[1:]
+    if not os.path.exists(sys.arguments[1]):
+        return('Specified path does not exist. Stopping.')
+
+    directory = arguments[1] # directory should be the first argument
 
     config = {
         'general' : {

@@ -19,13 +19,13 @@
         "image_size" : 128
     },
     "training" : {
-        "scnn_dir" : "../../training/training_set_20240123",
-        "model_name": "iota169",
-        "model_type": "DenseNet169",
+        "scnn_dir" : "../../training/kaggle",
+        "model_name": "kaggle45",
+        "model_type": "DenseNet45",
         "model_path": "../../model/",
         "image_size": 128,
-        "start" : 300,
-        "stop" : 301,
+        "start" : 0,
+        "stop" : 200,
         "validationSetRatio" : 0.2,
         "batchsize" : 128,
         "seed": 123

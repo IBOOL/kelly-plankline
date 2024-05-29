@@ -1,4 +1,6 @@
 import sys
+#import argparse
+import configparser
 from PIL import Image
 import cv2
 import os
@@ -8,16 +10,14 @@ from multiprocessing import Process, Queue
 import tqdm
 import shutil
 import random
-import logging
 
 class Frame:
-    def __init__(self, fpath, name, frame, cal, n):
+    def __init__(self, fpath, name, frame, n):
         self.fpath = fpath  # default is 0 for primary camera
         self.name = name
         self.frame = frame
         self.n = n
         self.flatfield = False
-        self.cal = cal
 
     def read(self):
         return self.frame
@@ -37,9 +37,24 @@ class Frame:
     def get_flatfield(self):
         return self.flatfield
 
-    def calibration(self):
-        return self.cal
 
+
+def bbox_area(bbox):
+    res = []
+    for p in bbox:
+        res.append(abs(p[2]*p[3]))
+    return res
+
+
+def intersection(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    interArea = abs(max((xB - xA, 0)) * max((yB - yA), 0))
+
+    return interArea
 
 
 def process_frame(q, config): ## TODO: write metadata file
@@ -50,28 +65,17 @@ def process_frame(q, config): ## TODO: write metadata file
     3. Remove strongly overlapping bounding boxes
     4. Save cropped targets.
     """
-    
+
     while True:
         frame = q.get()
-        #logger.debug(f"Pulled frame from queue. Processing {frame.get_name()}.")
         
         ## Read img and flatfield
-        #gray = cv2.cvtColor(frame.read(), cv2.COLOR_BGR2GRAY)
-        image = np.array(cv2.imread(frame.read()))
-        gray = image / frame.calibration() * 255
-        gray = gray.clip(0,255).astype(np.uint8)
-
-        gray = ~gray
-        mask = np.zeros(gray.shape[:2], dtype="uint8")
-        cv2.circle(mask, (gray.shape[1]//2, gray.shape[0]//2), 1100, 255, -1)
-        gray = cv2.bitwise_and(gray, gray, mask = mask) # Mask
-        gray = ~gray
-        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
-        
+        gray = cv2.cvtColor(frame.read(), cv2.COLOR_BGR2GRAY)
         gray = np.array(gray)
-        field = np.quantile(gray, q=float(config['segmentation']['flatfield_q']), axis=0)
-        gray = (gray / field.T * 255.0)
-        gray = gray.clip(0,255).astype(np.uint8)
+        if not frame.get_flatfield():
+            field = np.quantile(gray, q=float(config['segmentation']['flatfield_q']), axis=0)
+            gray = (gray / field.T * 255.0)
+            gray = gray.clip(0,255).astype(np.uint8)
 
         # Apply Otsu's threshold
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
@@ -109,6 +113,37 @@ def process_frame(q, config): ## TODO: write metadata file
                     im_padded.save(f"{name}{n:06}-{i:06}.png")
                 
 
+def process_avi(avi_path, segmentation_dir, config, q):
+    """
+    This function will take an avi filepath as input and perform the following steps:
+    1. Create output file structures/directories
+    2. Load each frame, pass it through flatfielding and sequentially save segmented targets
+    """
+
+    # segmentation_dir: /media/plankline/Data/analysis/segmentation/Camera1/segmentation/Transect1-REG
+    _, filename = os.path.split(avi_path)
+    output_path = segmentation_dir + os.path.sep + filename + os.path.sep
+    os.makedirs(output_path, exist_ok=True)
+    
+
+    video = cv2.VideoCapture(avi_path)
+    if not video.isOpened():
+        return
+    
+    with open(f'{output_path[:-1]} statistics.csv', 'a', newline='\n') as outcsv:
+        outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
+        outwritter.writerow(['frame', 'crop', 'x', 'y', 'w', 'h'])
+
+    n = 1 # Frame count
+    while True:
+        ret, frame = video.read()
+        if ret:
+            if not frame is None:
+                q.put(Frame(avi_path, output_path, frame, n), block = True)
+                n += 1 # Increment frame counter.
+        else:
+            break
+
 
 def process_image_dir(img_path, segmentation_dir, config, q):
     """
@@ -121,23 +156,38 @@ def process_image_dir(img_path, segmentation_dir, config, q):
     _, filename = os.path.split(img_path)
     output_path = segmentation_dir + os.path.sep + filename + os.path.sep
     os.makedirs(output_path, exist_ok=True)
-    logger.debug(f"Created directory {output_path} if not already existing.")
 
     with open(f'{output_path[:-1]} statistics.csv', 'a', newline='\n') as outcsv:
-        logger.info(f"Initialized metrics file for {filename}.")
-        outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
-        outwritter.writerow(['frame', 'crop', 'x', 'y', 'w', 'h'])
+              outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
+              outwritter.writerow(['frame', 'crop', 'x', 'y', 'w', 'h'])
 
-    logger.debug(f"Reading in calibration image {config['segmentation']['calibration_image']}.")
     bkg = np.array(cv2.imread(config['segmentation']['calibration_image']))
-    
+        
+    m = np.amin(bkg)
+    M = np.amax(bkg)
     for f in os.listdir(img_path):
       if f.endswith(('.jpg', '.jpeg', '.png')):
-          newframe = Frame(f, output_path, img_path + os.path.sep + f, bkg, f)
-          q.put(newframe, block = True)
-          logger.debug(f"Added image {f} to queue.")
-      else:
-        logger.debug(f"Skipped reading non-image file {f}.") 
+          image = np.array(cv2.imread(img_path + os.path.sep + f))
+          image = image / bkg * 255
+          image = image.clip(0,255).astype(np.uint8)
+          
+          if config['segmentation']['diagnostic']:
+              cv2.imwrite(output_path + os.path.sep + f'{f}-flatfield.jpg', image)
+          
+          ## Apply Mask (also invert so black masking becomes white background in shadowgraph)
+          image = ~image
+          mask = np.zeros(image.shape[:2], dtype="uint8")
+          cv2.circle(mask, (image.shape[1]//2, image.shape[0]//2), 1100, 255, -1)
+          image = cv2.bitwise_and(image, image, mask = mask) # Mask
+          
+          if config['segmentation']['diagnostic']:
+              cv2.imwrite(output_path + os.path.sep + f'{f}-flatfield+crop.jpg', ~image)
+          
+          image = ~image # Invert back to shadowgraph-standard
+          if not image is None:
+              newframe = Frame(f, output_path, image, f)
+              newframe.set_flatfield(True)
+              q.put(newframe, block = True)
 
 
 def generate_median_image(directory, output_dir):
@@ -148,7 +198,7 @@ def generate_median_image(directory, output_dir):
     image_files = [file for file in os.listdir(directory) if file.endswith(('.jpg', '.jpeg', '.png'))]
     
     if not image_files:
-        logger.error("No image files found in the directory. Cannot generate calibration image!")
+        print("No image files found in the directory.")
         return
 
     image_files = random.sample(image_files, min([100, len(image_files)]))
@@ -172,56 +222,27 @@ def generate_median_image(directory, output_dir):
     median_image = np.median(all_images, axis=0).astype(np.uint8)
     cv2.imwrite(output_dir + os.path.sep + 'median_image.jpg', median_image)
     print("New median (calibration) image saved as 'median_image.jpg'.")
-
-
-def setup_logger():
-  # The name should be unique, so you can get in in other places
-  # by calling `logger = logging.getLogger('com.dvnguyen.logger.example')
-  logger = logging.getLogger('log') 
-  logger.setLevel(logging.DEBUG) # the level should be the lowest level set in handlers
-
-  log_format = logging.Formatter('[%(levelname)s] %(asctime)s - %(message)s')
-
-  stream_handler = logging.StreamHandler()
-  stream_handler.setFormatter(log_format)
-  stream_handler.setLevel(logging.INFO)
-  logger.addHandler(stream_handler)
-
-  debug_handler = logging.FileHandler('../../logs/segmentationShadowgraph debug.log')
-  debug_handler.setFormatter(log_format)
-  debug_handler.setLevel(logging.DEBUG)
-  logger.addHandler(debug_handler)
-
-  info_handler = logging.FileHandler('../../logs/segmentationShadowgraph info.log')
-  info_handler.setFormatter(log_format)
-  info_handler.setLevel(logging.INFO)
-  logger.addHandler(info_handler)
-
-  error_handler = logging.FileHandler('../../logs/segmentationShadowgraph error.log')
-  error_handler.setFormatter(log_format)
-  error_handler.setLevel(logging.ERROR)
-  logger.addHandler(error_handler)
-  return logger
-
+    
 
 if __name__ == "__main__":
-    if length(sys.argv) < 2:
-        return('The raw sub-directory must be specificed. Stopping.')
-        
-    arguments = sys.argv[1:]
-    if not os.path.exists(sys.arguments[1]):
-        return('Specified path does not exist. Stopping.')
+    
+    directory = '../../raw/camera0/shadowgraph'
 
-    directory = arguments[1] # directory should be the first argument
-
-
-    with open('config.json', 'r') as f:
-        config = json.load(f)
+    config = {
+        'general' : {
+            'dir_permissions' : 511
+        },
+        'segmentation' : {
+            'diagnostic' : False,
+            'basename' : 'REG',
+            'min_perimeter' : 4*30,
+            'flatfield_q' : 0.05,
+            'calibration_image' : '../../raw/camera0/shadowgraph/median_image.jpg'
+        }
+    }
 
     v_string = "V2024.05.21"
-
-    logger = setup_logger()
-    logger.info(f"Starting Shadowgraph segmentation script {v_string}")
+    print(f"Starting Segmentation Script {v_string}")
 
     ## Determine directories
     raw_dir = os.path.abspath(directory) # /media/plankline/Data/raw/Camera0/test1
@@ -230,68 +251,58 @@ if __name__ == "__main__":
     segmentation_dir = segmentation_dir.replace("camera1/", "camera1/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
     segmentation_dir = segmentation_dir.replace("camera2/", "camera2/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
     segmentation_dir = segmentation_dir.replace("camera3/", "camera3/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
-    
+        
     segmentation_dir = segmentation_dir + f"-{config['segmentation']['basename']}" # /media/plankline/Data/analysis/segmentation/Camera1/segmentation/Transect1-REG
-    logger.debug(f"Segmentation directory: {segmentation_dir}")
-    
     os.makedirs(segmentation_dir, int(config['general']['dir_permissions']), exist_ok = True)
 
     ## Find files to process:
     # AVI videos
     avis = []
     avis = [os.path.join(raw_dir, avi) for avi in os.listdir(raw_dir) if avi.endswith(".avi")]
-    logger.info(f"Number of AVIs found: {len(avis)}")
-    
-    for idx, av in enumerate(avis):
-        logger.debug(f"Found AVI file {idx}: {av}.")
+    print(f"Number of AVIs found: {len(avis)}")
 
     # Subfolders of images(?)
     imgsets = []
     imgsets = [os.path.join(raw_dir, sub) for sub in next(os.walk(raw_dir))[1]]
-    logger.info(f"Number of possible image sets found: {len(imgsets)}")
-    for idx, f in enumerate(imgsets):
-        logger.debug(f"Found ubfolder {idx}: {f}.")
+    print(f"Number of possible image sets found: {len(imgsets)}")
 
     ## Prepare workers for receiving frames
     num_threads = os.cpu_count() - 1
     max_queue = num_threads * 4 # Prepare 4 frames per thread. TODO: test memory vs performance considerations. UPDATE: 4 still seems okay on my laptop.
     q = Queue(maxsize=int(max_queue))
-    workers = []
 
-    logger.debug(f"Starting {num_threads} processing threads.")
-    logger.debug(f"Initialized queue with size = {max_queue}.")
-    
     for i in range(num_threads):
         worker = Process(target=process_frame, args=(q, config,), daemon=True)
-        workers.append(worker)
         worker.start()
+        
+    print(f'Spun up {num_threads} worker threads for processing.')
 
-    if len(imgsets) > 0:
-        logger.info(f'Starting processing on {len(imgsets)} subfolders.')
-        for im in tqdm.tqdm(imgsets):
-            if not os.path.exists(config['segmentation']['calibration_image']):
-                logger.info('Generating calibration image.')
-                generate_median_image(im, config['segmentation']['calibration_image'])
-            logger.debug(f"Processing image directory {im}.")
-            process_image_dir(im, segmentation_dir, config, q)
+    if (len(avis)) > 0:
+        print(f'Starting processing on {len(avis)} AVI files.')
+        for av in tqdm.tqdm(avis):
+            process_avi(av, segmentation_dir, config, q)
 
-    logger.info('Joining worker processes.')
-    for worker in workers:
-        worker.join(timeout=1)
-    
-    if len(imgsets) > 0:
-        logger.info('Archiving results and cleaning up.')
-        for im in tqdm.tqdm(imgsets):
-            _, filename = os.path.split(im)
+        for av in avis:
+            _, filename = os.path.split(av)
             output_path = segmentation_dir + os.path.sep + filename + os.path.sep
-            logger.debug(f"Compressing to archive {filename + '.zip.'}")
             shutil.make_archive(segmentation_dir + os.path.sep + filename, 'zip', output_path)
             if not config['segmentation']['diagnostic']:
-                logger.debug(f"Cleaning up output path: {output_path}.")
                 shutil.rmtree(output_path, ignore_errors=True)
-    
-    logger.info('Finished segmentation.')
+
+    if len(imgsets) > 0:
+        print(f'Starting processing on {len(imgsets)} subfolders.')
+        for im in tqdm.tqdm(imgsets):
+            if not os.path.exists(config['segmentation']['calibration_image']):
+                generate_median_image(im, config['segmentation']['calibration_image'])
+            process_image_dir(im, segmentation_dir, config, q)
             
-    
+            _, filename = os.path.split(im)
+            output_path = segmentation_dir + os.path.sep + filename + os.path.sep
+            shutil.make_archive(segmentation_dir + os.path.sep + filename, 'zip', output_path)
+            if not config['segmentation']['diagnostic']:
+                shutil.rmtree(output_path, ignore_errors=True)
+            
+    print('Joining')
+    worker.join(timeout=10)
 
 
