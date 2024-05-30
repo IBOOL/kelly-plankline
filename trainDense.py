@@ -175,6 +175,36 @@ def DenseNet89(input_shape, num_classes):
     return model
 
 
+def DenseNet89short(input_shape, num_classes):
+
+    ## Init and Augmentation
+    inputs = tf.keras.layers.Input(shape=input_shape)
+    x = augmentation_block(inputs)
+
+    # Initial convolution layer
+    x = tf.keras.layers.Conv2D(128, (7, 7), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
+    
+    ## DenseNet89 (84 internal)
+    x = dense_block(x, num_layers=12, growth_rate=32)
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=18, growth_rate=32) 
+    x = transition_block(x, compression=0.5)
+    x = dense_block(x, num_layers=12, growth_rate=32)
+
+    # Final layers
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Dense(512, activation='relu')(x)
+    x = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+    
+    model = tf.keras.models.Model(inputs, x)
+    return model
+
+
 def DenseNet121(input_shape, num_classes):
 
     ## Init and Augmentation
@@ -306,16 +336,16 @@ def DenseNet264(input_shape, num_classes):
 def load_model(config, num_classes):
     if int(config['training']['start']) > 0:
         return(tf.keras.models.load_model(config['training']['model_path'] + '/' + config['training']['model_name'] + '.keras'))
-    
     return(init_model(num_classes, int(config['training']['image_size']), int(config['training']['image_size'])))
 
 
 def init_model(num_classes, img_height, img_width):
 
     ## Generate new model:
-    model = DenseNet45([img_height, img_width, 1], num_classes)
+    #model = DenseNet45([img_height, img_width, 1], num_classes)
     #model = DenseNet61([img_height, img_width, 1], num_classes)
     #model = DenseNet89([img_height, img_width, 1], num_classes)
+    model = DenseNet89short([img_height, img_width, 1], num_classes)
     #model = DenseNet121([img_height, img_width, 1], num_classes)
     #model = DenseNet169([img_height, img_width, 1], num_classes)
     #model = DenseNet201([img_height, img_width, 1], num_classes)
