@@ -20,14 +20,14 @@
     },
     "training" : {
         "scnn_dir" : "../../training/kaggle",
-        "model_name": "kaggle45",
-        "model_type": "DenseNet45",
+        "model_name": "kaggle61short",
+        "model_type": "DenseNet61",
         "model_path": "../../model/",
         "image_size": 128,
         "start" : 0,
         "stop" : 200,
         "validationSetRatio" : 0.2,
-        "batchsize" : 128,
+        "batchsize" : 64,
         "seed": 123
     }
 }
