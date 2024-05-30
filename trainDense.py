@@ -351,11 +351,6 @@ def init_ts(config):
         batch_size = int(config['training']['batchsize']),
         color_mode = 'grayscale')
     
-    train_ds = train_ds.cache()
-    val_ds = val_ds.cache()
-    train_ds = train_ds.prefetch(1)
-    val_ds = val_ds.prefetch(1)
-    
     return(train_ds, val_ds)
 
 
