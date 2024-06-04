@@ -20,9 +20,9 @@
         "cpuonly" : false
     },
     "training" : {
-        "scnn_dir" : "../../training/kaggle",
-        "model_name": "kaggle61short",
-        "model_type": "DenseNet61",
+        "scnn_dir" : "../../training/training_set_20240123",
+        "model_name": "iota121v1",
+        "model_type": "DenseNet121",
         "model_path": "../../model/",
         "image_size": 128,
         "start" : 0,
