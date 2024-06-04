@@ -85,14 +85,9 @@ def setup_logger():
 
 if __name__ == "__main__":
     
-    if length(sys.argv) < 2:
-        return('The segmentation sub-directory must be specificed. Stopping.')
-        
-    arguments = sys.argv[1:]
-    if not os.path.exists(sys.arguments[1]):
-        return('Specified path does not exist. Stopping.')
-
-    directory = arguments[1] # directory should be the first argument
+    directory = sys.argv[1]
+    if not os.path.exists(directory):
+        stop(f'Specified path ({directory}) does not exist. Stopping.')
 
     with open('config.json', 'r') as f:
         config = json.load(f)
@@ -103,6 +98,15 @@ if __name__ == "__main__":
 
     logger.info(f"Starting Plankline Classification Script {v_string}")
 
+    try:
+        # Disable all GPUS
+        tf.config.set_visible_devices([], 'GPU')
+        visible_devices = tf.config.get_visible_devices()
+        for device in visible_devices:
+            assert device.device_type != 'GPU'
+    except:
+        # Invalid device or cannot modify virtual devices once initialized.
+        pass
     
 
     # Load model

@@ -11,12 +11,13 @@
         "calibration_image" : "../../raw/camera0/shadowgraph/median_image.jpg"
     },
     "classification" : {
-        "model_name" : "iota",
+        "model_name" : "iota61short",
         "model_dir" : "../../model",
         "scnn_instances" : 1,
         "fast_scratch" : "/tmp",
         "batchsize" : 128,
-        "image_size" : 128
+        "image_size" : 128,
+        "cpuonly" : false
     },
     "training" : {
         "scnn_dir" : "../../training/kaggle",

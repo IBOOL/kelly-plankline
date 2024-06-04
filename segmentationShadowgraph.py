@@ -9,6 +9,7 @@ import tqdm
 import shutil
 import random
 import logging
+import json
 
 class Frame:
     def __init__(self, fpath, name, frame, cal, n):
@@ -16,7 +17,6 @@ class Frame:
         self.name = name
         self.frame = frame
         self.n = n
-        self.flatfield = False
         self.cal = cal
 
     def read(self):
@@ -31,12 +31,6 @@ class Frame:
     def update(self, newframe):
         self.frame = newframe
 
-    def set_flatfield(self, state):
-        self.flatfield = state
-
-    def get_flatfield(self):
-        return self.flatfield
-
     def calibration(self):
         return self.cal
 
@@ -50,10 +44,12 @@ def process_frame(q, config): ## TODO: write metadata file
     3. Remove strongly overlapping bounding boxes
     4. Save cropped targets.
     """
+    logger = setup_logger('process')
+    logger.debug("Process started.")
     
     while True:
         frame = q.get()
-        #logger.debug(f"Pulled frame from queue. Processing {frame.get_name()}.")
+        logger.debug(f"Pulled frame from queue. Processing {frame.get_name()}-{frame.get_n()}.")
         
         ## Read img and flatfield
         #gray = cv2.cvtColor(frame.read(), cv2.COLOR_BGR2GRAY)
@@ -80,9 +76,11 @@ def process_frame(q, config): ## TODO: write metadata file
 
         name = frame.get_name()
         n = frame.get_n()
+        logger.debug(f"Thresholding frame {n}.")
         stats = []
 
         if config['segmentation']['diagnostic']:
+            logger.debug(f"Diagnostic mode, saving threshold image and quantiledfiled image.")
             cv2.imwrite(f'{name}{n:06}-qualtilefield.jpg', gray)
             cv2.imwrite(f'{name}{n:06}-threshold.jpg', thresh)
 
@@ -107,6 +105,7 @@ def process_frame(q, config): ## TODO: write metadata file
                         top = 0
                     im_padded.paste(im, (left, top))
                     im_padded.save(f"{name}{n:06}-{i:06}.png")
+        logger.debug(f"Done with frame {n}.")
                 
 
 
@@ -165,7 +164,6 @@ def generate_median_image(directory, output_dir):
     for idx, image_file in enumerate(image_files):
         image_path = os.path.join(directory, image_file)
         image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        #image = cv2.GaussianBlur(image, (5,5), 0) # TODO: Gaussian blur help at all?
         all_images[idx] = image
 
     # Compute the median image
@@ -174,10 +172,10 @@ def generate_median_image(directory, output_dir):
     print("New median (calibration) image saved as 'median_image.jpg'.")
 
 
-def setup_logger():
+def setup_logger(name):
   # The name should be unique, so you can get in in other places
   # by calling `logger = logging.getLogger('com.dvnguyen.logger.example')
-  logger = logging.getLogger('log') 
+  logger = logging.getLogger(name) 
   logger.setLevel(logging.DEBUG) # the level should be the lowest level set in handlers
 
   log_format = logging.Formatter('[%(levelname)s] %(asctime)s - %(message)s')
@@ -187,17 +185,17 @@ def setup_logger():
   stream_handler.setLevel(logging.INFO)
   logger.addHandler(stream_handler)
 
-  debug_handler = logging.FileHandler('../../logs/segmentationShadowgraph debug.log')
+  debug_handler = logging.FileHandler(f'../../logs/segmentationShadowgraph {name} debug.log')
   debug_handler.setFormatter(log_format)
   debug_handler.setLevel(logging.DEBUG)
   logger.addHandler(debug_handler)
 
-  info_handler = logging.FileHandler('../../logs/segmentationShadowgraph info.log')
+  info_handler = logging.FileHandler(f'../../logs/segmentationShadowgraph {name} info.log')
   info_handler.setFormatter(log_format)
   info_handler.setLevel(logging.INFO)
   logger.addHandler(info_handler)
 
-  error_handler = logging.FileHandler('../../logs/segmentationShadowgraph error.log')
+  error_handler = logging.FileHandler(f'../../logs/segmentationShadowgraph {name} error.log')
   error_handler.setFormatter(log_format)
   error_handler.setLevel(logging.ERROR)
   logger.addHandler(error_handler)
@@ -205,14 +203,10 @@ def setup_logger():
 
 
 if __name__ == "__main__":
-    if length(sys.argv) < 2:
-        return('The raw sub-directory must be specificed. Stopping.')
-        
-    arguments = sys.argv[1:]
-    if not os.path.exists(sys.arguments[1]):
-        return('Specified path does not exist. Stopping.')
 
-    directory = arguments[1] # directory should be the first argument
+    directory = sys.argv[1]
+    if not os.path.exists(directory):
+        stop(f'Specified path ({directory}) does not exist. Stopping.')
 
 
     with open('config.json', 'r') as f:
@@ -220,7 +214,7 @@ if __name__ == "__main__":
 
     v_string = "V2024.05.21"
 
-    logger = setup_logger()
+    logger = setup_logger('main')
     logger.info(f"Starting Shadowgraph segmentation script {v_string}")
 
     ## Determine directories
@@ -237,14 +231,6 @@ if __name__ == "__main__":
     os.makedirs(segmentation_dir, int(config['general']['dir_permissions']), exist_ok = True)
 
     ## Find files to process:
-    # AVI videos
-    avis = []
-    avis = [os.path.join(raw_dir, avi) for avi in os.listdir(raw_dir) if avi.endswith(".avi")]
-    logger.info(f"Number of AVIs found: {len(avis)}")
-    
-    for idx, av in enumerate(avis):
-        logger.debug(f"Found AVI file {idx}: {av}.")
-
     # Subfolders of images(?)
     imgsets = []
     imgsets = [os.path.join(raw_dir, sub) for sub in next(os.walk(raw_dir))[1]]
@@ -254,7 +240,7 @@ if __name__ == "__main__":
 
     ## Prepare workers for receiving frames
     num_threads = os.cpu_count() - 1
-    max_queue = num_threads * 4 # Prepare 4 frames per thread. TODO: test memory vs performance considerations. UPDATE: 4 still seems okay on my laptop.
+    max_queue = num_threads * 8 # Prepare 4 frames per thread. TODO: test memory vs performance considerations. UPDATE: 4 still seems okay on my laptop.
     q = Queue(maxsize=int(max_queue))
     workers = []
 
@@ -267,6 +253,7 @@ if __name__ == "__main__":
         worker.start()
 
     if len(imgsets) > 0:
+        ## Process each imgset:
         logger.info(f'Starting processing on {len(imgsets)} subfolders.')
         for im in tqdm.tqdm(imgsets):
             if not os.path.exists(config['segmentation']['calibration_image']):
@@ -277,7 +264,7 @@ if __name__ == "__main__":
 
     logger.info('Joining worker processes.')
     for worker in workers:
-        worker.join(timeout=1)
+        worker.join(timeout=0.1)
     
     if len(imgsets) > 0:
         logger.info('Archiving results and cleaning up.')
