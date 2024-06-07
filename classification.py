@@ -98,15 +98,17 @@ if __name__ == "__main__":
 
     logger.info(f"Starting Plankline Classification Script {v_string}")
 
-    try:
-        # Disable all GPUS
-        tf.config.set_visible_devices([], 'GPU')
-        visible_devices = tf.config.get_visible_devices()
-        for device in visible_devices:
-            assert device.device_type != 'GPU'
-    except:
-        # Invalid device or cannot modify virtual devices once initialized.
-        pass
+    if config['classification']['cpuonly']:
+        logger.info("Disabling GPU support for this Tensorflow session.")
+        try:
+            # Disable all GPUS
+            tf.config.set_visible_devices([], 'GPU')
+            visible_devices = tf.config.get_visible_devices()
+            for device in visible_devices:
+                assert device.device_type != 'GPU'
+        except:
+            # Invalid device or cannot modify virtual devices once initialized.
+            pass
     
 
     # Load model
@@ -115,6 +117,7 @@ if __name__ == "__main__":
     logger.info(f"Loading model from {model_path}.")
     logger.info(f"Loading model sidecar from {label_path}.")
     model = tf.keras.models.load_model(model_path)
+    
     
     with open(label_path, 'r') as file:
         sidecar = json.load(file)
