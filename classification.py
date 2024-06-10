@@ -180,3 +180,4 @@ if __name__ == "__main__":
         logger.info('Cleaning up unpacked archive files.')
         shutil.rmtree(segmentation_dir + '/' + r2 + "/", ignore_errors=True)
     logger.info('Finished classification.')
+    sys.exit(0) # Successful close

@@ -278,7 +278,7 @@ if __name__ == "__main__":
                 shutil.rmtree(output_path, ignore_errors=True)
     
     logger.info('Finished segmentation.')
-            
+    sys.exit(0) # Successful close  
     
 
 

@@ -211,4 +211,4 @@ if __name__ == "__main__":
     json_object = json.dumps(sidecar, indent=4)
     with open(config['training']['model_path'] + '/' + config['training']['model_name'] + '.json', "w") as outfile:
         outfile.write(json_object)
-
+    sys.exit(0) # Successful close
