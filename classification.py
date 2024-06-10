@@ -118,7 +118,6 @@ if __name__ == "__main__":
     logger.info(f"Loading model sidecar from {label_path}.")
     model = tf.keras.models.load_model(model_path)
     
-    
     with open(label_path, 'r') as file:
         sidecar = json.load(file)
         logger.debug('Sidecar Loaded.')
