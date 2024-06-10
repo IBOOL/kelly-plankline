@@ -207,7 +207,7 @@ if __name__ == "__main__":
 
     logger.info('Joining worker processes.')
     for worker in workers:
-        worker.join(timeout=0.1)
+        worker.join(timeout=1)
     
     if len(avis) > 0:
         logger.info('Archiving results and cleaning up.')
