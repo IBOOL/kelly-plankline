@@ -28,223 +28,199 @@ License:
     SOFTWARE.
 """
 
-import os
 import sys
-import shutil
 import argparse
-import logging # TBK: logging module
-import logging.config # TBK
-import configparser # TBK: To read config file
-import tqdm # TBK
-from time import time
-import psutil
-
-from multiprocessing import Pool
-import datetime
-
-
-def seg_ff(avi, seg_output, SNR, segment_path):
-    """Formats and calls the segmentation executable"""
-    snr = str(SNR)
-    epsilon = config['segmentation']['overlap']
-    delta = config['segmentation']['delta']
-    max_area = config['segmentation']['max_area']
-    min_area = config['segmentation']['min_area']
-
-    segment_log = segment_dir + '/segment_' + session_id + '.log'
-    full_output = config['segmentation']['full_output']
-
-    seg = f'nohup \"{segment_path}\" -i \"{avi}\" -o \"{seg_output}\" -s {snr} -e {epsilon} -M {max_area} -m {min_area} -d {delta} {full_output} >> \"{segment_log}\" 2>&1'
-    logger.info("Segmentation call: " + seg)
-
-    os.chmod(seg_output, permis)
-
-    timer_seg = time()
-    os.system(seg)
-    timer_seg = time() - timer_seg
-    logger.debug(f"Segmentation finished in {timer_seg:.3f} s.")
+import configparser
+from PIL import Image
+import cv2  # still used to save images out
+import os
+import numpy as np
+import csv
+#from queue import Queue
+#from threading import Thread
+from multiprocessing import Process, Queue
+import tqdm
+import sqlite3
 
 
+class Frame:
+    def __init__(self, fpath, name, frame, n):
+        self.fpath = fpath  # default is 0 for primary camera
+        self.name = name
+        self.frame = frame
+        self.n = n
 
-def local_main(avi):
-    """A single threaded function that takes one avi path."""
-    logger.info("Starting local_main.")
+    # method for returning latest read frame
+    def read(self):
+        return self.frame
 
-    # setup all of the local paths for the avi
-    avi_file = os.path.basename(avi) # get only the file part of the full path
-    avi_date_code = os.path.splitext(avi_file)[0] # remove .avi
-    avi_segment_scratch = fast_scratch + "/" + avi_date_code
-    seg_output = avi_segment_scratch + "_s"
-    out_dir = segment_dir + "/" + avi_date_code
+    # method called to stop reading frames
+    def get_n(self):
+        return self.n
 
-    logger.info(f'avi_file: {avi_file}')
-    logger.info(f'avi_date_code: {avi_date_code}')
-    logger.info(f'avi_segment_scratch: {avi_segment_scratch}')
-    logger.info(f'seg_output: {seg_output}')
-    logger.info(f'segment_dir: {segment_dir}')
-    logger.info(f"Current ram usage (GB): {psutil.virtual_memory()[3]/1000000000:.2f}")
-    logger.info(f"Current cpu usage (%): {psutil.cpu_percent(4):.1f}")
-    
+    def get_name(self):
+        return self.name
 
-    logger.debug(f'Starting AVI file: {avi_file}')
 
-    # Create necessary directory structure.
-    logger.info('Setting up AVI directories.')
-    os.makedirs(avi_segment_scratch, permis, exist_ok=True)
-    os.makedirs(seg_output, permis, exist_ok=True)
+def bbox_area(bbox):
+    res = []
+    for p in bbox:
+        res.append(abs(p[2]*p[3]))
+    return res
 
-    # Segmentation.
-    logger.info('Starting segmentation.')
-    timer_seg = time()
-    seg_ff(avi, seg_output, SNR, segment_path)
-    timer_seg = time() - timer_seg
-    logger.debug(f"Segmentation executable took {timer_seg:.3f} s.")
 
-    if config['general']['compress_output'] == 'True':
-        logger.info('Start tarring+compressing.')
-        tar_name = out_dir + ".tar.gz"
-        tar = f'tar czf \"{tar_name}\" -C \"{seg_output}\" .'
-        logger.debug(tar)
+def intersection(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    interArea = abs(max((xB - xA, 0)) * max((yB - yA), 0))
+
+    return interArea
+
+
+def process_frame(q, config): ## TODO: write metadata file
+    """
+    This function processes each frame (provided as cv2 image frame) for flatfielding and segmentation. The steps include
+    1. Flatfield intensities as indicated
+    2. Segment the image using cv2 MSER algorithmn.
+    3. Remove strongly overlapping bounding boxes
+    4. Save cropped targets.
+    """
+
+    while True:
+        frame = q.get()
+        if config['general']['dry_run'] == 'True':
+            print('.')
+            return
         
-        timer_tar = time()
-        os.system(tar)
-        os.chmod(tar_name, permis)
-        timer_tar = time() - timer_tar
+        #con = sqlite3.connect(frame.get_name() + '/' + 'images.db')
+        
+        ## Read img and flatfield
+        gray = cv2.cvtColor(frame.read(), cv2.COLOR_BGR2GRAY)
+        gray = np.array(gray)
+        field = np.quantile(gray, q=float(config['segmentation']['flatfield_q']), axis=0)
+        gray = (gray / field.T * 255.0)
+        gray = gray.clip(0,255).astype(np.uint8)
 
-        logger.info(f'End tarring+compressing in {timer_tar:.3f} s.')
-    else:
-        logger.info('Start tarring')
-        tar_name = out_dir + ".tar"
-        tar = f'tar cf \"{tar_name}\" -C \"{seg_output}\" .'
-        logger.debug(tar)
+        # Detect regions
+        mser = cv2.MSER_create(delta=int(config['segmentation']['delta']),
+                               min_area=int(config['segmentation']['min_area']),
+                                  max_area=int(config['segmentation']['max_area']),
+                                    max_variation=0.5,
+                                      min_diversity=0.1)
+        regions, bboxes = mser.detectRegions(gray)
+        area = bbox_area(bboxes)
 
-        timer_tar = time()
-        os.system(tar)
-        os.chmod(tar_name, permis)
-        timer_tar = time() - timer_tar
+        for x in range(len(bboxes)-1):
+            for y in range(x+1, len(bboxes)):
+                overlap = intersection([bboxes[x][0], bboxes[x][1], bboxes[x][0]+bboxes[x][2], bboxes[x][1] + bboxes[x][3]], [bboxes[y][0], bboxes[y][1], bboxes[y][0]+bboxes[y][2], bboxes[y][1] + bboxes[y][3]])
+                if overlap * 1. / max(area[x], area[y]) > float(config['segmentation']['overlap']):
+                    if area[x] > area[y]:
+                        bboxes[y] = [0,0,0,0]
+                    else:
+                        bboxes[x] = [0,0,0,0]
 
-        logger.info(f'End tarring in {timer_tar:.3f} s.')
+        area = bbox_area(bboxes)
+        name = frame.get_name()
+        n = frame.get_n()
+        with open(f'{name}statistics.csv', 'a', newline='\n') as outcsv:
+            outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
+            for i in range(len(bboxes)):
+                if area[i] > 0:
+                    #im = sqlite3.Binary(gray[bboxes[i][1]:(bboxes[i][1] + bboxes[i][3]), bboxes[i][0]:(bboxes[i][0] + bboxes[i][2])])
+                    im = Image.fromarray(gray[bboxes[i][1]:(bboxes[i][1] + bboxes[i][3]), bboxes[i][0]:(bboxes[i][0] + bboxes[i][2])])
+                    im.save(f"{name}{n:05}-{i:05}.png")
+                    stats = [name, n, i, bboxes[i][0] + bboxes[i][2]/2, bboxes[i][1] + bboxes[i][3]/2, bboxes[i][2], bboxes[i][3], area[i]]
+                    outwritter.writerow(stats)
+                    #con.execute(f'INSERT INTO frame(frame,crop,image) VALUES ({n}, {i}, ?) [{im}]')
 
-    shutil.rmtree(seg_output)          # remove datecode_s/
-    shutil.rmtree(avi_segment_scratch) # remove datecode/
-    logger.info('End local_main.')
+
+def process_avi(avi_path, segmentation_dir, config, q):
+    """
+    This function will take an avi filepath as input and perform the following steps:
+    1. Create output file structures/directories
+    2. Load each frame, pass it through flatfielding and sequentially save segmented targets
+    """
+
+    # segmentation_dir: /media/plankline/Data/analysis/segmentation/Camera1/segmentation/Transect1-REG
+    _, filename = os.path.split(avi_path)
+    output_path = segmentation_dir + os.path.sep + filename + os.path.sep
+    os.makedirs(output_path, exist_ok=True)
+    
+    #con = sqlite3.connect(output_path + '/' + 'images.db')
+    #con.execute("CREATE TABLE frame(ID INT PRIMARY KEY NOT NULL,frame INT, crop INT, image BLOB)")
+    #con.commit()
+    #con.close()
+
+    video = cv2.VideoCapture(avi_path)
+    #length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if not video.isOpened():
+        return
+    
+    with open(f'{output_path}statistics.csv', 'a', newline='\n') as outcsv:
+        outwritter = csv.writer(outcsv, delimiter=',', quotechar='|')
+        outwritter.writerow(['file', 'frame', 'crop', 'x', 'y', 'w', 'h', 'area'])
+
+    n = 1
+    while True:
+        ret, frame = video.read()
+        if ret:
+            q.put(Frame(avi_path, output_path, frame, n), block = True)
+            n += 1
+        else:
+            break
+
 
 
 if __name__ == "__main__":
-    """The main entry point and script for segmentation."""
+    """
+    The main entry point and script for segmentation.
+    """
 
-    v_string = "V2023.10.03"
-    print(f"Starting Plankline Segmentation Script {v_string}")
-    session_id = str(datetime.datetime.now().strftime("%Y%m%d_%H%M%S")).replace(':', '')
-    
+    v_string = "V2023.11.08"
+    print(f"Starting Segmentation Script {v_string}")
+
     # create a parser for command line arguments
     parser = argparse.ArgumentParser(description="Segmentation tool for the plankton pipeline. Uses ffmpeg and seg_ff to segment a video into crops of plankton")
     parser.add_argument("-c", "--config", required = True, help = "Configuration ini file.")
     parser.add_argument("-d", "--directory", required = True, help = "Input directory containing ./raw/")
 
-    # read in the arguments
     args = parser.parse_args()
-
-    if os.path.isfile(args.config) == False:
-        print(f"No config file found called {args.config}. Aborting!")
-        exit()
-
     config = configparser.ConfigParser()
     config.read(args.config)
 
-    if config.has_option('logging', 'config') == False:
-        print(f"No logging:config specified in {args.config}. Aborting!")
-        exit()
-
-    ## Read in config options:
-    basename = config['segmentation']['segment_basename']
-    permis = int(config['general']['dir_permissions'])
-    SNR = int(config['segmentation']['signal_to_noise'])
-    num_processes = int(config['segmentation']['segment_processes'])
-    segment_path = config['segmentation']['segment'] # TBK: Absolute path to segmentation executable.
-    fast_scratch = config['segmentation']['fast_scratch'] # TBK: Fastest IO option for temporary files.
-    
     ## Determine directories
     raw_dir = os.path.abspath(args.directory) # /media/plankline/Data/raw/Camera1/Transect1
-    working_dir = raw_dir.replace("raw", "analysis") # /media/plankline/Data/analysis/Camera1/Transect1
-    working_dir = working_dir.replace("camera0/", "camera0/segmentation/") # /media/plankline/Data/analysis/Camera1/Transect1
-    working_dir = working_dir.replace("camera1/", "camera1/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
-    working_dir = working_dir.replace("camera2/", "camera2/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
-    working_dir = working_dir.replace("camera3/", "camera3/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
+    segmentation_dir = raw_dir.replace("raw", "analysis") # /media/plankline/Data/analysis/Camera1/Transect1
+    segmentation_dir = segmentation_dir.replace("camera0/", "camera0/segmentation/") # /media/plankline/Data/analysis/Camera1/Transect1
+    segmentation_dir = segmentation_dir.replace("camera1/", "camera1/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
+    segmentation_dir = segmentation_dir.replace("camera2/", "camera2/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
+    segmentation_dir = segmentation_dir.replace("camera3/", "camera3/segmentation/") # /media/plankline/Data/analysis/Camera1/segmentation/Transect1
     
-    segment_dir = working_dir + f"({basename})" # /media/plankline/Data/analysis/segmentation/Camera1/segmentation/Transect1(reg)
-    fast_scratch = fast_scratch + "/segment-" + session_id
-
-    os.makedirs(segment_dir, permis, exist_ok = True)
-    os.makedirs(fast_scratch, permis, exist_ok = True)
-
-    ## Setup logger
-    logging.config.fileConfig(config['logging']['config'], defaults={'date':session_id,'path':segment_dir,'name':'segmentation'})
-    logger = logging.getLogger('sLogger')
-
-    cp_file = segment_dir + '/' + session_id + ' ' + args.config
-    logger.debug(f"Copying ini file to segmentation directory {segment_dir}")
-    logger.info(f"Copy config to {cp_file}")
-    shutil.copy2(args.config, cp_file)
-
-
-    logger.info(f"Starting plankline segmentation {v_string}")
-    logger.debug(f"Segmentation on: {working_dir}")
-    logger.debug(f"Number of processes: {num_processes}")
-    logger.debug(f"Machine scratch: {fast_scratch}")
-
-    # Print config options to screen (TBK)
-    print(f"Configureation file: {args.config}")
-    print(f"Segmentation basename: {basename}")
-    print(f"Segmentation from: {raw_dir}")
-    print(f"Segmentation to: {segment_dir}")
-    print(f"Scratch to: {fast_scratch}")
-    print(f"Number of processes: {num_processes}")
-    print(f"SNR: {SNR}")
-    print(f"Log configuration file: {config['logging']['config']}")
-    print(f"Compressing output: {config['general']['compress_output'] == 'True'}")
-
-    # Check the permissions
-    if os.access(segment_dir, os.W_OK) == False:
-        logger.error(f"Cannot write to project directory {segment_dir}!")
-        exit()
-
-    if os.access(fast_scratch, os.W_OK) == False:
-        logger.error(f"Cannot write to temporary directory {fast_scratch}!")
-        exit()
-
-
-    logger.info("Starting AVI loop.")
+    segmentation_dir = segmentation_dir + f"-{config['segmentation']['basename']}" # /media/plankline/Data/analysis/segmentation/Camera1/segmentation/Transect1-REG
+    os.makedirs(segmentation_dir, int(config['general']['dir_permissions']), exist_ok = True)
 
     avis = []
-    logger.info("Looking at avi filepaths.")
     avis = [os.path.join(raw_dir, avi) for avi in os.listdir(raw_dir) if avi.endswith(".avi")]
 
-    logger.debug("Found {length} AVI files.".format(length = len(avis)))
-    print("Found {length} AVI files.".format(length = len(avis)))
-
     if (len(avis) == 0):
-        logger.error(f"No avi files found in machine_scratch/raw make sure avi files are in {raw_dir}.")
-        exit()
+        #logger.error(f"No avi files found in machine_scratch/raw make sure avi files are in {raw_dir}.")
+        sys.exit(f"No avi files found in machine_scratch/raw make sure avi files are in {raw_dir}.")
 
-    # Parallel portion of the code.
-    logger.info("Starting multithreaded segmentation call.")
-    p = Pool(num_processes)
+    ## Prepare workers for receiving frames
+    num_threads = os.cpu_count() - 1
+    #num_threads = 2
+    max_queue = num_threads * 4
+    q = Queue(maxsize=int(max_queue))
 
-    # TBK:
-    timer_pool = time()
-    for _ in tqdm.tqdm(p.imap_unordered(local_main, avis), total = len(avis)):
-        pass
-    timer_pool = time() - timer_pool
+    for i in range(num_threads):
+        worker = Process(target=process_frame, args=(q, config,), daemon=True)
+        worker.start()
 
-    p.close()
-    p.join() # blocks so that we can wait for the processes to finish
+    for av in tqdm.tqdm(avis):
+        process_avi(av, segmentation_dir, config, q)
 
-    logger.debug(f"Finished segmentation in {timer_pool:.3f} s.")
-    print(f"Finished segmentation in {timer_pool:.1f} seconds.")
-
-    logger.debug(f"Deleting temporary directory {fast_scratch}.")
-    shutil.rmtree(fast_scratch, ignore_errors=True)
-
-    logger.debug("Done.")
-    
+    print('Joining')
+    worker.join(timeout=10)

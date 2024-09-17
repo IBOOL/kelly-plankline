@@ -42,100 +42,72 @@ import datetime
 from time import time
 from multiprocessing import Pool, Queue
 import psutil
+import tensorflow as tf
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+import pathlib
+import csv
+from PIL import Image
+import os
+import pandas as pd
 
 
-def classify(tar_file):
-    """Classify images contained within a TAR file."""
+def classify(model, input_dir, output_dir):
+    images = []
+    image_files = []
+    for img in os.listdir(input_dir):
+        if os.path.splitext(img)[1] == '.png':
+            image_files.append(img)
+            img = tf.keras.preprocessing.image.load_img(input_dir + '/' + img, target_size=(int(config['classification']['image_size']),int(config['classification']['image_size'])), color_mode='grayscale')
+            img = np.expand_dims(img, axis=0)
+            images.append(img)
+    images = np.vstack(images)
     
-    timer_classify = time()
-    logger.info("Starting classify")
-    logger.debug(f"Basename for model run is {basename}.")
-    logger.info(f"Current ram usage (GB): {psutil.virtual_memory()[3]/1000000000:.2f}")
-    logger.info(f"Current cpu usage (%): {psutil.cpu_percent(4):.1f}")
+    predictions = model.predict(images)
+    prediction_labels = np.argmax(predictions, axis=-1)
+    df = pd.DataFrame(predictions, index=image_files)
+    df.to_csv(output_dir + '_' + 'prediction.csv', index=True, header=True, sep=',')
     
-    if config['general']['compress_output'] == 'True':
-        image_dir = tar_file.replace(".tar.gz", "") # remove extension
-    else:
-        image_dir = tar_file.replace(".tar", "") # remove extension
-        
-    tar_identifier = os.path.basename(image_dir)
-    tmp_dir = fast_scratch + '/' + tar_identifier
-    os.makedirs(tmp_dir, permis, exist_ok = True)
-    
-    log_file = f"{classification_dir}/{tar_identifier}.log"
-    image_dir = tmp_dir + '/'
 
-    gpu_id = queue.get()
-
-    logger.info(f"Starting on GPU {gpu_id}")
-    logger.info(f'image_dir: {tmp_dir}')
-    logger.info(f'tar_identifier: {tar_identifier}')
-    
-    # Untar files
-    if config['general']['compress_output'] == 'True':
-        untar_cmd = f'tar -xzf "{tar_file}" -C "{tmp_dir}" --strip-components=4 --wildcards "*crop*.png"  >> "{log_file}" 2>&1' # TBK change strip-components to what you need.
-        logger.debug('Untarring+unzipping files: ' + untar_cmd)
-    else:
-        untar_cmd = f'tar -xf "{tar_file}" -C "{tmp_dir}" --strip-components=4 --wildcards "*crop*.png"  >> "{log_file}" 2>&1' # TBK change strip-components to what you need.
-        logger.debug('Untarring files: ' + untar_cmd)
-    
-    timer_untar = time()
-    os.system(untar_cmd)
-    timer_untar = time() - timer_untar
-    logger.debug(f"Untarring files took {timer_untar:.3f} s.")
-
-    # Perform classification.
-    #scnn_cmd  = f"cd '{os.path.dirname(scnn_command)}'; nohup ./scnn -start {epoch} -stop {epoch} -unl '{tmp_dir}' -cD {gpu_id} -basename {basename} >> '{log_file}' 2>&1"
-    scnn_cmd  = f"nohup {scnn_command} -start {epoch} -stop {epoch} -unl '{tmp_dir}' -bs {batchsize} -cD {gpu_id} -basename {basename} -project {scnn_directory} >> '{log_file}' 2>&1"
-    logger.debug('Running SCNN: ' + scnn_cmd)
-    logger.info('Start SCNN.')
-
-    timer_scnn = time()
-    os.system(scnn_cmd)
-    timer_scnn = time() - timer_scnn
-    logger.info('End SCNN.')
-    logger.debug(f"SCNN took {timer_scnn:.3f} s.")
-
-    # Move the csv file resulting from classification.
-    logger.info(f"Looking for files in {scnn_directory}/data/ that match the id: {tar_identifier}")
-    csv_path = glob.glob(f"{scnn_directory}/data/*{tar_identifier}*")
-    if len(csv_path) > 0:
-        csv_path = csv_path[0]
-        csv_file = f"{classification_dir}/{tar_identifier}.csv"
-
-        timer_move = time()
-        shutil.move(csv_path, csv_file)
-        os.chmod(csv_file, permis)
-        timer_move = time() - timer_move
-        logger.debug(f"Moving csv(s) took {timer_move:.3f} s.")
-        
-    else:
-        logger.error(f'No classification file found for {tar_identifier}')
-
-    # Clean directories to make space.
-    #shutil.rmtree(tmp_dir)
-
-    queue.put(gpu_id) # add the gpu id to the queue so that it can be allocated again
-    logger.debug('End classify.')
-    timer_classify = time() - timer_classify
-    logger.debug(f"Total classification process took {timer_classify:.3f} s.")
-
-    #if config['R']['preprocess']:
-    #    timer_pre = time()
-    #    logger.debug('Preprocessing requested.')
-
-    #    pre_cmd = 'Rscript "' + config['R']['script'] + '" ' + config['R']['dt'] + ' ' + config['R']['p_threshold'] + ' "' + csv_file + '"'
-    #    logger.debug(f"Running preprocessing cmd: {pre_cmd}")
-    #    os.system(pre_cmd)
-
-    #    timer_pre = time() - timer_pre
-    #    logger.debug(f"Preprocessing took {timer_pre:.3f} s.")
+def pad(path, ratio=0.2):
+    dirs = os.listdir(path)
+    count = 0
+    for item in dirs:
+        if not os.path.isfile(path + '/' + item):
+            dirs2 = os.listdir(path + '/' + item + "/")
+            for item2 in dirs2:
+                if os.path.isfile(path+'/'+item+"/"+item2):
+                    if os.path.splitext(path+'/'+item+"/"+item2)[1] == '.png':
+                        im = Image.open(path+'/'+item+"/"+item2)
+                        width, height = im.size
+                        if width > height * (1. + ratio):
+                            left = 0
+                            right = width
+                            top = (width - height)//2
+                            bottom = width
+                            result = Image.new(im.mode, (right, bottom), (255))
+                            result.paste(im, (left, top))
+                            im.close()
+                            result.save(path + '/'+item+"/"+item2)
+                            count+=1
+                        elif height > width * (1. + ratio):
+                            left = (height - width)//2
+                            right = height
+                            top = 0
+                            bottom = height
+                            result = Image.new(im.mode, (right, bottom), (255))
+                            result.paste(im, (left, top))
+                            im.close()
+                            result.save(path + '/'+item+"/"+item2)
+                            count+=1
+    count
 
 
 if __name__ == "__main__":
     """Main entry point for classification.py"""
     
-    v_string = "V2023.10.05"
+    v_string = "V2023.11.13"
     session_id = str(datetime.datetime.now().strftime("%Y%m%d_%H%M%S")).replace(':', '')
     print(f"Starting Plankline Classification Script {v_string}")
 
@@ -149,113 +121,32 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read(args.config)
     
-    basename = config['classification']['scnn_basename']
-    permis = int(config['general']['dir_permissions'])
-    scnn_instances = int(config['classification']['scnn_instances'])
-    scnn_directory = config['classification']['scnn_dir']
-    scnn_command = config['classification']['scnn_cmd']
-    epoch = int(config['classification']['epoch'])
-    fast_scratch = config['classification']['fast_scratch']
-    batchsize = config['classification']['batchsize']
-
-    segmentation_dir = os.path.abspath(args.directory)  # /media/plankline/Data/analysis/segmentation/Camera1/Transect1 (reg)
-    classification_dir = segmentation_dir.replace('segmentation', 'classification')  # /media/plankline/Data/analysis/segmentation/Camera1/Transect1 (reg)
-    classification_dir = classification_dir.replace(')', f'-{basename})')  # /media/plankline/Data/analysis/segmentation/Camera1/Transect1 (reg plankton)
-    fast_scratch = fast_scratch + "/classify-" + session_id
+    # Load model
+    model_path = os.path.join(config['classification']['model_dir'], config['classification']['model_name'])
     
-    os.makedirs(classification_dir, permis, exist_ok = True)
-    os.makedirs(fast_scratch, permis, exist_ok = True)
+    if not os.path.isdir(model_path):
+        sys.exit('Error, no model found at {model_path}')
     
-    logging.config.fileConfig(config['logging']['config'], defaults={'date':session_id,'path':classification_dir,'name':'classification'}) # TBK
-    logger = logging.getLogger('sLogger')
+    model = tf.keras.models.load_model(model_path)
 
-    # Print config options to screen (TBK)
-    logger.info(f"Starting plankline classification {v_string}")
-    print(f"Configureation file: {args.config}")
-    print(f"Segmentation on: {segmentation_dir}")
-    print(f"Model: {basename}")
-    print(f"Number of instances: {scnn_instances}")
-    print(f"Epoch: {epoch}")
-    print(f"Batchsize: {batchsize}")
-    print(f"Log configuration file: {config['logging']['config']}")
+    segmentation_dir = os.path.abspath(args.directory)  # /media/plankline/Data/analysis/segmentation/Camera1/Transect1-reg
+    classification_dir = segmentation_dir.replace('segmentation', 'classification')  # /media/plankline/Data/analysis/segmentation/Camera1/Transect1-reg
+    classification_dir = classification_dir + '-' + config["classification"]["model_name"] # /media/plankline/Data/analysis/segmentation/Camera1/Transect1-reg-Plankton
+    fast_scratch = config['classification']['fast_scratch'] + "/classify-" + session_id
     
-    logger.info(f'Basename of Model: {basename}')
-    logger.info(f'Epoch: {epoch}')
-    logger.info(f'Segmentation Directory: {segmentation_dir}')
-    logger.info(f'Batchsize: {batchsize}')
-
-    #  Check the permissions
-    if os.access(segmentation_dir, os.W_OK) == False:
-        logger.error(f"Cannot write to project directory {segmentation_dir}!")
-        exit()
-        
-    if os.access(scnn_directory, os.W_OK) == False:
-        logger.error(f"Cannot write to model directory {scnn_directory}!")
-        exit()
-
-    if os.access(fast_scratch, os.W_OK) == False:
-        logger.error(f"Cannot write to temporary directory {fast_scratch}!")
-        exit()
-
-    # make sure this is a valid directory
-    if not os.path.exists(segmentation_dir):
-        logger.error(f"Segmentation directory {segmentation_dir} does not exist (and it should)!")
-        exit()
-        
-    cp_file = classification_dir + '/' + session_id + ' ' + args.config
-    logger.debug(f"Copying ini file to classification directory {classification_dir}")
-    logger.info(f"Copy of log file in {cp_file}")
-    shutil.copy2(args.config, cp_file)
-    logger.debug("Done.")
+    os.makedirs(classification_dir, int(config['general']['dir_permissions']), exist_ok = True)
+    os.makedirs(fast_scratch, int(config['general']['dir_permissions']), exist_ok = True)
     
-    ## Copy classList
-    class_path = scnn_directory + '/data/classList'
-    epoch_path = scnn_directory + '/weights/' + basename + '_epoch-' + str(epoch) + '.cnn'
+    root = os.listdir(segmentation_dir)
     
-    if not os.path.isfile(class_path):
-        logger.error(f'classList file does not exist: {class_path}')
-    if not os.path.isfile(epoch_path):
-        logger.error(f'Epoch file does not exist: {epoch_path}')
+    if len(root) == 0:
+        sys.exit(f"Error: No tars file in segmenation directory: {segmentation_dir}")
     
-    if config['general']['compress_output'] == 'True':
-        tars = [os.path.join(segmentation_dir, tar) for tar in os.listdir(segmentation_dir) if tar.endswith(".tar.gz")]
-    else :
-        tars = [os.path.join(segmentation_dir, tar) for tar in os.listdir(segmentation_dir) if tar.endswith(".tar")]
-
-    if len(tars) == 0:
-        sys.exit("Error: No tars file in segmenation directory")
-
-    # setup gpu queue
-    num_gpus = str(subprocess.check_output(["nvidia-smi", "-L"])).count('UUID') # read number of gpus from nvidia-smi output
-
-    queue = Queue()
-    for gpu_id in range(num_gpus):
-        for _ in range(scnn_instances):
-            queue.put(gpu_id)
-
-    num_processes = scnn_instances * num_gpus
-    tar_length = len(tars)
-    logger.debug(f"Number of GPUs: {num_gpus}")
-    logger.debug(f"SCNN Instances per GPU: {scnn_instances}")
-    logger.debug(f"Total Processes: {num_processes}")
-    logger.info(f"Identified {tar_length} tar.gz files")
-
-    # this is the parallel portion of the code
-    p = Pool(num_processes)
-
-    # Start the Classification processes.
-    timer_pool = time()
-    for _ in tqdm.tqdm(p.imap_unordered(classify, tars, chunksize = 1), total = len(tars)):
-        pass
-
-    p.close()
-    p.join() # blocks so that we can wait for the processes to finish
+    n_pad = pad(segmentation_dir)
+    print(f"Number of images padded: {n_pad}.")
     
-    timer_pool = time() - timer_pool
-    logger.debug(f"Finished classification in {timer_pool:.3f} seconds.")
-    print(f"Finished Classification in {timer_pool:.1f} seconds.")
+    for r in root:
+        classify(model, segmentation_dir + '/' + r, classification_dir + '/' + r)
 
-    logger.debug(f"Deleting temporary directory {fast_scratch}.")
-    shutil.rmtree(fast_scratch, ignore_errors=True)
 
 

@@ -228,7 +228,7 @@ _On a windows computer, you need to install the NFS support as an optional windo
 
 Add the following lines:
 
-    /media/plankline/ingest    *(rw,sync,subtree_check)
+    /data    *(rw,sync,subtree_check)
 
 __Setup Samba:__ (Windows SMB)
 
@@ -236,37 +236,22 @@ __Setup Samba:__ (Windows SMB)
     sudo nano /etc/samba/smb.conf
 
 
-Inside the smb.conf file, go to the bottom of the file and add the following (or something similar). This will setup a share named _ingest_ which will be writable by everyone (no security) on the network.
+Inside the smb.conf file, go to the bottom of the file and add the following (or something similar). This will setup a share named _data_ which will be writable by everyone (no security) on the network.
 
-    [ingest]
+    [data]
         comment = Plankline data drive.
-        path = /media/plankline/ingest
+        path = /data
         browsable = yes
         guest ok = yes
         read only = no
         create mask = 0777
 
-Can do the same for an output directory share.
-
-    [output]
-        comment = Plankline output drive.
-        path = /media/plankline/data
-        browsable = yes
-        guest ok = yes
-        read only = no
-        create mask = 0777
-
-
-Create the directory given above:
-
-    sudo mkdir -p /media/plankline/ingest
-    sudo chown nobody:nogroup /media/plankline/ingest
 
 Restart samba to apply the edits.
 
     sudo systemctl restart smbd.service
 
-The folder /media/plankline/ingest should now be available as \\plankline-X\ingest from any file manager or as http://plankline-x/ingest from the browser.
+The folder /data should now be available as \\plankline-X\data from any file manager or as http://plankline-X/data from the browser.
 
 
 
@@ -283,7 +268,7 @@ __Mount NAS on Plankline:__
     sudo mount -t cifs -o user=tbkelly //10.25.187.104/shuttle /mnt/shuttle
     sudo nano /etc/fstab
 
-Add line: "//10.25.187.104/shuttle	/mnt/shuttle	cifs	user=<user>,pass=<password>	0	0"
+Add line: "//IP/folder	/mnt/folder	cifs	user=<user>,pass=<password>	0	0"
 
 
 ## 6. Misc Linux Tasks
